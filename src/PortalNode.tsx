@@ -1,5 +1,6 @@
 import { memo, useState } from "react";
 import { NodeResizer, Handle, Position, type NodeProps } from "@xyflow/react";
+import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { ni } from "./node-icons";
 
 export type PortalNodeData = {
@@ -21,6 +22,12 @@ function PortalNodeImpl({ id, data, selected }: NodeProps) {
     const u = draft.trim();
     d.onUrl(id, /^https?:\/\//.test(u) ? u : `https://${u}`);
   };
+  // sites com X-Frame-Options não abrem no iframe → webview nativa em janela
+  const popOut = () => {
+    if (!d.url) return;
+    const w = new WebviewWindow(`portal-${id}-${Date.now()}`, { url: d.url, title: d.label, width: 1100, height: 780 });
+    void w.once("tauri://error", () => {});
+  };
   return (
     <div className="portal-node">
       <NodeResizer minWidth={280} minHeight={200} isVisible={selected} />
@@ -37,6 +44,7 @@ function PortalNodeImpl({ id, data, selected }: NodeProps) {
           onKeyDown={(e) => { if (e.key === "Enter") go(); }}
         />
         <button className="agent-btn nodrag" title="Ir" onClick={go}>{ni.enter}</button>
+        <button className="agent-btn nodrag" title="Abrir em janela nativa (sites que bloqueiam embed)" onClick={popOut}>{ni.popout}</button>
         <button className="agent-btn nodrag" title="Remover" onClick={() => d.onKill(id)}>{ni.x}</button>
       </div>
       {d.url ? (

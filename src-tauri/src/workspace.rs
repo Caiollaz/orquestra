@@ -47,6 +47,11 @@ pub struct Workspace {
     pub agents: Vec<Agent>,
     #[serde(default)]
     pub floors: Vec<Floor>,
+    /// Estado completo do canvas (nós de todo tipo + arestas), opaco pro Rust:
+    /// o front serializa/restaura; o back só persiste. Evita espelhar cada
+    /// tipo de nó novo em struct.
+    #[serde(default)]
+    pub canvas: serde_json::Value,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -137,6 +142,10 @@ mod tests {
             viewport: Viewport { x: 1.0, y: 2.0, zoom: 1.5 },
             agents: vec![],
             floors: vec![],
+            canvas: serde_json::json!({
+                "nodes": [{"id": "note-1", "type": "note", "x": 1.0, "y": 2.0, "data": {"text": "olá"}}],
+                "edges": [{"source": "a", "target": "b"}],
+            }),
         };
         save_workspace(ws.clone()).unwrap();
 
@@ -147,6 +156,9 @@ mod tests {
         let got = load_workspace("w1".into()).unwrap();
         assert_eq!(got.repo_path, "/repo/x");
         assert_eq!(got.viewport.zoom, 1.5);
+        // canvas roundtrip opaco (nós de qualquer tipo + arestas)
+        assert_eq!(got.canvas["nodes"][0]["data"]["text"], "olá");
+        assert_eq!(got.canvas["edges"][0]["target"], "b");
 
         std::fs::remove_dir_all(&tmp).ok();
     }

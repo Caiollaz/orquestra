@@ -47,9 +47,14 @@ export type WsAgent = {
   floorSlug?: string | null; x: number; y: number; w: number; h: number;
 };
 export type WorkspaceMeta = { id: string; name: string; repoPath: string };
+// estado serializado do canvas (nós de todo tipo + arestas) — opaco pro Rust
+export type CanvasNode = { id: string; type: string; x: number; y: number; w?: number; h?: number; data: Record<string, unknown> };
+export type CanvasState = { nodes: CanvasNode[]; edges: { id: string; source: string; target: string }[] };
+
 export type Workspace = {
   id: string; name: string; repoPath: string; createdAt?: string;
   viewport: Viewport; agents: WsAgent[]; floors: Floor[];
+  canvas?: CanvasState | null;
 };
 export const listWorkspaces = () => invoke<WorkspaceMeta[]>("list_workspaces");
 export const loadWorkspace = (id: string) => invoke<Workspace>("load_workspace", { id });

@@ -6,6 +6,7 @@ import { noteText } from "./shared";
 export type NoteNodeData = {
   onSend: (id: string) => void;
   onKill: (id: string) => void;
+  onDirty?: () => void; // avisa o autosave (texto vive fora do estado do React)
 };
 
 // evento disparado pelo App quando um agente escreve numa nota (linha ⇢nota: …)
@@ -28,6 +29,7 @@ function NoteNodeImpl({ id, data, selected }: NodeProps) {
         noteText.set(id, next);
         return next;
       });
+      d.onDirty?.();
     };
     window.addEventListener("note-write", h);
     return () => window.removeEventListener("note-write", h);
@@ -50,7 +52,7 @@ function NoteNodeImpl({ id, data, selected }: NodeProps) {
         value={text}
         placeholder="Cole contexto, specs, links… e envie pros agentes conectados. Agentes conectados podem escrever aqui com ⇢nota: texto."
         spellCheck={false}
-        onChange={(e) => { setText(e.target.value); noteText.set(id, e.target.value); }}
+        onChange={(e) => { setText(e.target.value); noteText.set(id, e.target.value); d.onDirty?.(); }}
       />
     </div>
   );

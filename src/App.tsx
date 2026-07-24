@@ -29,7 +29,7 @@ import { DialogHost, askText, askConfirm, alertMsg } from "./Dialog";
 import {
   forwardOutput, applyRole, createFloor, removeFloor, openEditor,
   listWorkspaces, loadWorkspace, saveWorkspace, deleteWorkspace,
-  type AgentCmd, type Role, type Floor, type WorkspaceMeta, type WsAgent, type Workspace,
+  type AgentCmd, type Role, type Floor, type WorkspaceMeta, type WsAgent, type Workspace, type CanvasState,
 } from "./lib/tauri";
 import { terminals, noteText } from "./shared";
 import "./App.css";
@@ -70,7 +70,22 @@ export default function App() {
   const lastLineRef = useRef(new Map<string, number>());
   const seededRef = useRef(new Set<string>());
   const schedRef = useRef(new Map<string, number>());
+  // spec dos agendamentos (intervalo+texto) pra persistir no workspace
+  const schedSpecRef = useRef(new Map<string, { secs: number; text: string }>());
   const rfRef = useRef<ReactFlowInstance | null>(null);
+
+  // autosave: qualquer mutação marca sujo; 1.2s depois persiste (se há workspace)
+  const persistRef = useRef<() => Promise<void>>(async () => {});
+  const dirtyTimer = useRef<number | undefined>(undefined);
+  const dirty = useCallback(() => {
+    clearTimeout(dirtyTimer.current);
+    dirtyTimer.current = window.setTimeout(() => { void persistRef.current(); }, 1200);
+  }, []);
+  useEffect(() => {
+    const flush = () => { void persistRef.current(); };
+    window.addEventListener("beforeunload", flush);
+    return () => window.removeEventListener("beforeunload", flush);
+  }, []);
 
   const [floors, setFloors] = useState<Floor[]>([]);
   const [activeFloor, setActiveFloor] = useState("");
@@ -94,13 +109,14 @@ export default function App() {
     return () => { void un.then((f) => f()); };
   }, []);
 
-  const onNodesChange = useCallback((c: NodeChange[]) => setNodes((ns) => applyNodeChanges(c, ns)), []);
-  const onEdgesChange = useCallback((c: EdgeChange[]) => setEdges((es) => applyEdgeChanges(c, es)), []);
+  const onNodesChange = useCallback((c: NodeChange[]) => { setNodes((ns) => applyNodeChanges(c, ns)); dirty(); }, [dirty]);
+  const onEdgesChange = useCallback((c: EdgeChange[]) => { setEdges((es) => applyEdgeChanges(c, es)); dirty(); }, [dirty]);
 
   // ao ligar uma aresta, avisa o claude de origem quem é o alvo (senão ele não
   // sabe o label e executa tudo nele mesmo em vez de delegar)
   const onConnect = useCallback((c: Connection) => {
     setEdges((es) => addEdge(c, es));
+    dirty();
     const src = nodesRef.current.find((n) => n.id === c.source);
     const tgt = nodesRef.current.find((n) => n.id === c.target);
     if (!src || !tgt) return;
@@ -115,7 +131,7 @@ export default function App() {
         : `um agente claude — fale com ele via ⇢${(tgt.data as AgentNodeData).label}: mensagem`;
     const label = tgt.type === "note" ? "nota" : (tgt.data as { label?: string }).label ?? tgt.id;
     void forwardOutput(c.source, `(sistema) você foi conectado ao nó "${label}": ${kind}. Responda apenas OK.`).catch(() => {});
-  }, []);
+  }, [dirty]);
 
   const flashTimers = useRef(new Map<string, number>());
   const flashEdge = useCallback((source: string, target: string) => {
@@ -138,7 +154,9 @@ export default function App() {
     seededRef.current.delete(id);
     const t = schedRef.current.get(id);
     if (t) { clearInterval(t); schedRef.current.delete(id); }
-  }, []);
+    schedSpecRef.current.delete(id);
+    dirty();
+  }, [dirty]);
 
   const readNewLines = useCallback((id: string): string[] => {
     const term = terminals.get(id);
@@ -220,14 +238,25 @@ export default function App() {
     if (!id) return;
     void applyRole(id, role).catch(() => {});
     setNodes((ns) => ns.map((n) => (n.id === id ? { ...n, data: { ...n.data, roleName: role.name } } : n)));
+    dirty();
   };
+
+  // liga o intervalo e registra o spec (o spec vai pro workspace no autosave)
+  const startSchedule = useCallback((id: string, secs: number, text: string) => {
+    const t = window.setInterval(() => { void forwardOutput(id, text).catch(() => {}); }, secs * 1000);
+    schedRef.current.set(id, t);
+    schedSpecRef.current.set(id, { secs, text });
+    setNodes((ns) => ns.map((n) => (n.id === id ? { ...n, data: { ...n.data, scheduled: true } } : n)));
+  }, []);
 
   const scheduleAgent = useCallback(async (id: string) => {
     const existing = schedRef.current.get(id);
     if (existing) {
       clearInterval(existing);
       schedRef.current.delete(id);
+      schedSpecRef.current.delete(id);
       setNodes((ns) => ns.map((n) => (n.id === id ? { ...n, data: { ...n.data, scheduled: false } } : n)));
+      dirty();
       return;
     }
     const r = await askText("Agendar prompt", [
@@ -238,10 +267,9 @@ export default function App() {
     const secs = Number(r[0]);
     const text = r[1]?.trim();
     if (!secs || secs <= 0 || !text) return;
-    const t = window.setInterval(() => { void forwardOutput(id, text).catch(() => {}); }, secs * 1000);
-    schedRef.current.set(id, t);
-    setNodes((ns) => ns.map((n) => (n.id === id ? { ...n, data: { ...n.data, scheduled: true } } : n)));
-  }, []);
+    startSchedule(id, secs, text);
+    dirty();
+  }, [startSchedule, dirty]);
 
   const agentData = (label: string, cmd: AgentCmd, section: string, extra: Partial<AgentNodeData> = {}): AgentNodeData => ({
     label, cmd, cwd: activeCwd, section,
@@ -268,27 +296,33 @@ export default function App() {
     const id = `agent-${++seq}`;
     const data = agentData(nextLabel(label), cmd, SECTIONS[seq % SECTIONS.length]);
     setNodes((ns) => [...ns, { id, type: "agent", position: pos ?? gridPos(ns.length), width: 480, height: 320, data }]);
+    dirty();
   };
+  const noteData = (): NoteNodeData => ({ onKill: killNode, onSend: sendFrom, onDirty: dirty });
   const addNote = (pos?: XYPosition) => {
     const id = `note-${++seq}`;
-    const data: NoteNodeData = { onKill: killNode, onSend: sendFrom };
-    setNodes((ns) => [...ns, { id, type: "note", position: pos ?? { x: 60, y: 60 + ns.length * 40 }, width: 280, height: 180, data }]);
+    setNodes((ns) => [...ns, { id, type: "note", position: pos ?? { x: 60, y: 60 + ns.length * 40 }, width: 280, height: 180, data: noteData() }]);
+    dirty();
   };
   const setShapeLabel = useCallback((id: string, label: string) => {
     setNodes((ns) => ns.map((n) => (n.id === id ? { ...n, data: { ...n.data, label } } : n)));
-  }, []);
+    dirty();
+  }, [dirty]);
   const addShape = (variant: ShapeNodeData["variant"], pos?: XYPosition) => {
     const id = `shape-${++seq}`;
     const data: ShapeNodeData = { label: "", variant, onKill: killNode, onLabel: setShapeLabel };
     setNodes((ns) => [...ns, { id, type: "shape", position: pos ?? { x: 120 + ns.length * 24, y: 120 + ns.length * 24 }, width: 160, height: 64, data }]);
+    dirty();
   };
   const setPortalUrl = useCallback((id: string, url: string) => {
     setNodes((ns) => ns.map((n) => (n.id === id ? { ...n, data: { ...n.data, url } } : n)));
-  }, []);
+    dirty();
+  }, [dirty]);
   const addPortal = (pos?: XYPosition) => {
     const id = `portal-${++seq}`;
     const data: PortalNodeData = { label: nextLabel("portal"), url: "", onKill: killNode, onUrl: setPortalUrl };
     setNodes((ns) => [...ns, { id, type: "portal", position: pos ?? { x: 80, y: 80 }, width: 420, height: 320, data }]);
+    dirty();
   };
 
   // ── floors ──────────────────────────────────────────────────────
@@ -309,8 +343,8 @@ export default function App() {
   };
 
   // ── workspaces ──────────────────────────────────────────────────
-  // ponytail: persiste só agentes+layout+floors (o que o modelo Rust guarda).
-  // Notas/formas/portais/arestas não têm campo → não sobrevivem ao reload.
+  // canvas completo (todo tipo de nó + arestas + notas + agendamentos) vai no
+  // campo `canvas` (JSON opaco pro Rust); `agents` continua preenchido por compat.
   const buildWorkspace = (id: string, name: string): Workspace => {
     const agents: WsAgent[] = nodesRef.current
       .filter((n) => n.type === "agent")
@@ -319,14 +353,32 @@ export default function App() {
         return { id: n.id, label: d.label, roleFile: null, cmd: d.cmd, cwd: d.cwd, floorSlug: null,
           x: n.position.x, y: n.position.y, w: n.width ?? 480, h: n.height ?? 320 };
       });
+    const canvas: CanvasState = {
+      nodes: nodesRef.current.map((n) => {
+        const base = { id: n.id, type: n.type ?? "agent", x: n.position.x, y: n.position.y, w: n.width, h: n.height };
+        const d = n.data as Record<string, unknown>;
+        switch (n.type) {
+          case "agent": {
+            const a = n.data as AgentNodeData;
+            return { ...base, data: { label: a.label, cmd: a.cmd, cwd: a.cwd, roleName: a.roleName ?? null, schedule: schedSpecRef.current.get(n.id) ?? null } };
+          }
+          case "note": return { ...base, data: { text: noteText.get(n.id) ?? "" } };
+          case "shape": return { ...base, data: { label: d.label ?? "", variant: d.variant ?? "box" } };
+          case "portal": return { ...base, data: { label: d.label ?? "", url: d.url ?? "" } };
+          default: return { ...base, data: {} };
+        }
+      }),
+      edges: edgesRef.current.map((e) => ({ id: e.id, source: e.source, target: e.target })),
+    };
     const viewport = rfRef.current?.getViewport() ?? { x: 0, y: 0, zoom: 1 };
-    return { id, name, repoPath: cwd, viewport, agents, floors };
+    return { id, name, repoPath: cwd, viewport, agents, floors, canvas };
   };
   const persistCurrent = useCallback(async () => {
     if (!wsId) return;
     try { await saveWorkspace(buildWorkspace(wsId, wsName)); } catch { /* ignora */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wsId, wsName, cwd, floors]);
+  useEffect(() => { persistRef.current = persistCurrent; }, [persistCurrent]);
 
   const doSave = async () => {
     if (wsId) { await persistCurrent(); refreshWs(); return; }
@@ -338,21 +390,68 @@ export default function App() {
     catch (e) { void alertMsg("Erro ao salvar", String(e)); }
   };
 
+  // limpa agendamentos/estado transiente do canvas anterior
+  const resetTransient = () => {
+    for (const t of schedRef.current.values()) clearInterval(t);
+    schedRef.current.clear();
+    schedSpecRef.current.clear();
+    noteText.clear();
+    lastLineRef.current.clear();
+    seededRef.current.clear();
+  };
+
   const doLoad = async (id: string) => {
     try {
       const ws = await loadWorkspace(id);
+      resetTransient();
       setCwd(ws.repoPath);
       setFloors(ws.floors ?? []);
       setActiveFloor("");
-      setEdges([]);
       let maxSeq = 0;
-      const restored: Node[] = ws.agents.map((a) => {
-        const m = a.id.match(/(\d+)$/); if (m) maxSeq = Math.max(maxSeq, Number(m[1]));
-        return { id: a.id, type: "agent", position: { x: a.x, y: a.y }, width: a.w, height: a.h,
-          data: agentData(a.label, a.cmd, SECTIONS[maxSeq % SECTIONS.length]) };
-      });
+      const bump = (nid: string) => { const m = nid.match(/(\d+)$/); if (m) maxSeq = Math.max(maxSeq, Number(m[1])); };
+      let restored: Node[];
+      let restoredEdges: Edge[] = [];
+      const canvas = ws.canvas;
+      if (canvas?.nodes?.length || canvas?.edges?.length) {
+        let idx = 0;
+        restored = (canvas.nodes ?? []).map((cn) => {
+          bump(cn.id);
+          const base = { id: cn.id, type: cn.type, position: { x: cn.x, y: cn.y }, width: cn.w, height: cn.h };
+          const d = cn.data as Record<string, unknown>;
+          switch (cn.type) {
+            case "agent": {
+              const sched = d.schedule as { secs: number; text: string } | null;
+              if (sched) window.setTimeout(() => startSchedule(cn.id, sched.secs, sched.text), 0);
+              return { ...base, data: agentData(String(d.label ?? cn.id), d.cmd as AgentCmd, SECTIONS[idx++ % SECTIONS.length], {
+                cwd: String(d.cwd ?? ws.repoPath),
+                roleName: (d.roleName as string | null) ?? undefined,
+                scheduled: !!sched,
+              }) };
+            }
+            case "note":
+              noteText.set(cn.id, String(d.text ?? ""));
+              return { ...base, data: noteData() };
+            case "shape":
+              return { ...base, data: { label: String(d.label ?? ""), variant: (d.variant as ShapeNodeData["variant"]) ?? "box", onKill: killNode, onLabel: setShapeLabel } satisfies ShapeNodeData };
+            case "portal":
+              return { ...base, data: { label: String(d.label ?? ""), url: String(d.url ?? ""), onKill: killNode, onUrl: setPortalUrl } satisfies PortalNodeData };
+            default:
+              return { ...base, data: {} };
+          }
+        });
+        restoredEdges = (canvas.edges ?? []).map((e) => ({ id: e.id, source: e.source, target: e.target }));
+      } else {
+        // workspaces antigos (pré-canvas): só agentes
+        let idx = 0;
+        restored = ws.agents.map((a) => {
+          bump(a.id);
+          return { id: a.id, type: "agent", position: { x: a.x, y: a.y }, width: a.w, height: a.h,
+            data: agentData(a.label, a.cmd, SECTIONS[idx++ % SECTIONS.length]) };
+        });
+      }
       seq = Math.max(seq, maxSeq);
       setNodes(restored);
+      setEdges(restoredEdges);
       setWsId(ws.id); setWsName(ws.name);
       if (ws.viewport) rfRef.current?.setViewport(ws.viewport);
     } catch (e) { void alertMsg("Erro ao abrir workspace", String(e)); }
@@ -376,6 +475,7 @@ export default function App() {
     try {
       await saveWorkspace(ws);
       refreshWs();
+      resetTransient();
       setCwd(dir); setFloors([]); setActiveFloor(""); setNodes([]); setEdges([]);
       setWsId(id); setWsName(name);
     } catch (e) { void alertMsg("Erro ao abrir pasta", String(e)); }
@@ -395,7 +495,7 @@ export default function App() {
   const removeWs = async (ws: WorkspaceMeta) => {
     if (!(await askConfirm("Remover workspace", `Remover "${folderName(ws)}"? Os terminais deste workspace serão encerrados.`, true))) return;
     try { await deleteWorkspace(ws.id); } catch (e) { void alertMsg("Erro ao remover", String(e)); }
-    if (ws.id === wsId) { setWsId(""); setWsName(""); setNodes([]); setEdges([]); }
+    if (ws.id === wsId) { resetTransient(); setWsId(""); setWsName(""); setNodes([]); setEdges([]); }
     refreshWs();
   };
 
@@ -499,6 +599,7 @@ export default function App() {
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
+            onMoveEnd={dirty}
             onPaneContextMenu={paneContext}
             onNodeContextMenu={nodeContext}
             proOptions={{ hideAttribution: true }}

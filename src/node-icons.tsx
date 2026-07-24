@@ -8,4 +8,5 @@ export const ni = {
   role: <svg {...base} aria-hidden><circle cx="12" cy="12" r="8" /><circle cx="12" cy="12" r="3" /></svg>,
   clock: <svg {...base} aria-hidden><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>,
   enter: <svg {...base} aria-hidden><path d="M20 5v6a2 2 0 0 1-2 2H5" /><path d="m9 9-4 4 4 4" /></svg>,
+  popout: <svg {...base} aria-hidden><path d="M14 4h6v6" /><path d="M20 4 10 14" /><path d="M20 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h5" /></svg>,
 };
