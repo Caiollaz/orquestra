@@ -25,13 +25,19 @@ pub struct PtyState {
 }
 
 impl PtyState {
+    /// Um `panic` dentro de qualquer command envenena o mutex; com `.unwrap()`
+    /// todo command seguinte entrava em panic também e o app inteiro perdia os
+    /// terminais de vez. O mapa não fica logicamente inconsistente (no pior
+    /// caso um write pela metade), então recuperamos o guard e seguimos.
+    fn agents(&self) -> std::sync::MutexGuard<'_, HashMap<String, Agent>> {
+        self.agents.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
     /// Mata todos os agentes (chamado no fechamento do app pra não deixar órfão).
     pub fn kill_all(&self) {
-        if let Ok(mut map) = self.agents.lock() {
-            for (_, mut a) in map.drain() {
-                a.alive.store(false, Ordering::SeqCst);
-                let _ = a.child.kill();
-            }
+        for (_, mut a) in self.agents().drain() {
+            a.alive.store(false, Ordering::SeqCst);
+            let _ = a.child.kill();
         }
     }
 }
@@ -44,8 +50,56 @@ pub enum AgentCmd {
     Shell { program: Option<String> },
 }
 
+/// PATH real do shell de login+interativo do usuário, resolvido UMA vez por
+/// execução (OnceLock). É o que faz nvm/asdf/mise/fnm/pyenv/sdkman/brew…
+/// funcionarem pra qualquer usuário sem hardcode por gerenciador — o rc dele
+/// é a fonte da verdade (mesma técnica do VS Code). Timeout de 2.5s pra um
+/// rc travado nunca congelar o spawn de agente.
+#[cfg(not(windows))]
+fn login_shell_path() -> Option<&'static str> {
+    use std::sync::OnceLock;
+    static CACHE: OnceLock<Option<String>> = OnceLock::new();
+    CACHE
+        .get_or_init(|| {
+            let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into());
+            // fish: $PATH é lista (expandiria com espaços) → junta com ':'
+            let print = if shell.ends_with("fish") { "string join ':' $PATH" } else { "printf '%s' \"$PATH\"" };
+            let mut child = std::process::Command::new(&shell)
+                .args(["-ilc", print])
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+                .ok()?;
+            let deadline = std::time::Instant::now() + std::time::Duration::from_millis(2500);
+            loop {
+                match child.try_wait() {
+                    Ok(Some(st)) if st.success() => break,
+                    Ok(Some(_)) => return None,
+                    Ok(None) if std::time::Instant::now() > deadline => {
+                        let _ = child.kill();
+                        return None;
+                    }
+                    Ok(None) => std::thread::sleep(std::time::Duration::from_millis(25)),
+                    Err(_) => return None,
+                }
+            }
+            let mut out = String::new();
+            child.stdout.take()?.read_to_string(&mut out).ok()?;
+            let out = out.trim().to_string();
+            (!out.is_empty()).then_some(out)
+        })
+        .as_deref()
+}
+
+/// Aquece o cache do PATH em background no boot (o 1º spawn não paga os 2.5s).
+pub fn prewarm_path() {
+    let _ = augmented_path();
+}
+
 /// PATH do shell de login costuma ter dirs que o app GUI não herda.
-/// Aumenta o PATH atual com os locais comuns pra achar `claude` e afins.
+/// Base: PATH herdado + PATH do shell de login do usuário (rc dele) +
+/// fallbacks comuns (caso a resolução do shell falhe/estoure o timeout).
 pub(crate) fn augmented_path() -> String {
     let mut parts: Vec<std::path::PathBuf> = std::env::var_os("PATH")
         .map(|p| std::env::split_paths(&p).collect())
@@ -53,6 +107,9 @@ pub(crate) fn augmented_path() -> String {
 
     #[cfg(not(windows))]
     {
+        if let Some(sp) = login_shell_path() {
+            parts.extend(std::env::split_paths(sp));
+        }
         if let Some(home) = std::env::var_os("HOME") {
             let home = std::path::PathBuf::from(home);
             for suf in [".local/bin", ".cargo/bin", ".bun/bin", ".deno/bin", ".volta/bin", ".local/share/pnpm", "bin"] {
@@ -239,25 +296,30 @@ pub fn spawn_agent(
         });
     }
 
-    state.agents.lock().unwrap().insert(
-        agent_id,
-        Agent { writer, master: pair.master, child, alive },
-    );
+    // id repetido (remount do XtermView, reload da janela) sobrescrevia a
+    // entrada e deixava o processo antigo órfão — mata o anterior antes.
+    if let Some(mut old) = state
+        .agents()
+        .insert(agent_id, Agent { writer, master: pair.master, child, alive })
+    {
+        old.alive.store(false, Ordering::SeqCst);
+        let _ = old.child.kill();
+    }
     Ok(())
 }
 
 #[tauri::command]
 pub fn write_stdin(state: State<PtyState>, agent_id: String, data: String) -> Result<(), String> {
-    let mut map = state.agents.lock().unwrap();
-    let a = map.get_mut(&agent_id).ok_or("agente não encontrado")?;
+    let mut map = state.agents();
+    let a = map.get_mut(&agent_id).ok_or(format!("agente {agent_id} não encontrado"))?;
     a.writer.write_all(data.as_bytes()).map_err(|e| e.to_string())?;
     a.writer.flush().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn resize_pty(state: State<PtyState>, agent_id: String, cols: u16, rows: u16) -> Result<(), String> {
-    let map = state.agents.lock().unwrap();
-    let a = map.get(&agent_id).ok_or("agente não encontrado")?;
+    let map = state.agents();
+    let a = map.get(&agent_id).ok_or(format!("agente {agent_id} não encontrado"))?;
     a.master
         .resize(PtySize { rows, cols, pixel_width: 0, pixel_height: 0 })
         .map_err(|e| e.to_string())
@@ -265,19 +327,40 @@ pub fn resize_pty(state: State<PtyState>, agent_id: String, cols: u16, rows: u16
 
 #[tauri::command]
 pub fn kill_agent(state: State<PtyState>, agent_id: String) -> Result<(), String> {
-    if let Some(mut a) = state.agents.lock().unwrap().remove(&agent_id) {
+    if let Some(mut a) = state.agents().remove(&agent_id) {
         a.alive.store(false, Ordering::SeqCst);
         a.child.kill().map_err(|e| e.to_string())?;
     }
     Ok(())
 }
 
+/// Ids dos agentes vivos. O front usa pra saber se um nó restaurado já tem PTY
+/// (e pra não semear contexto duas vezes no mesmo processo).
+#[tauri::command]
+pub fn live_agents(state: State<PtyState>) -> Vec<String> {
+    state
+        .agents()
+        .iter()
+        .filter(|(_, a)| a.alive.load(Ordering::SeqCst))
+        .map(|(id, _)| id.clone())
+        .collect()
+}
+
+/// Tira caracteres de controle do texto colado. Um `\x1b[201~` no meio do
+/// conteúdo encerraria o bracketed-paste antes do fim e o resto entraria como
+/// digitação crua no terminal do destino — injeção de comando a partir de
+/// output de outro agente, de um arquivo de contexto ou de uma nota. `\n` e
+/// `\t` ficam (formatam o bloco); o `\r` que submete é adicionado no framing.
+pub(crate) fn bracketed_safe(text: &str) -> String {
+    text.chars().filter(|c| !c.is_control() || *c == '\n' || *c == '\t').collect()
+}
+
 /// Escreve texto no stdin do agente como bracketed-paste (bloco único, uma submissão).
 /// Usado pelo forward_output (comunicação entre agentes) e pelo apply_role (semear papel).
 pub fn forward_output_to(state: &PtyState, to_agent: &str, text: &str) -> Result<(), String> {
-    let mut map = state.agents.lock().unwrap();
-    let a = map.get_mut(to_agent).ok_or("agente destino não encontrado")?;
-    let framed = format!("\x1b[200~{}\x1b[201~\r", text);
+    let mut map = state.agents();
+    let a = map.get_mut(to_agent).ok_or(format!("agente destino {to_agent} não encontrado"))?;
+    let framed = format!("\x1b[200~{}\x1b[201~\r", bracketed_safe(text));
     a.writer.write_all(framed.as_bytes()).map_err(|e| e.to_string())?;
     a.writer.flush().map_err(|e| e.to_string())
 }
@@ -299,6 +382,19 @@ mod tests {
         assert!(matches!(shell, AgentCmd::Shell { program: None }));
         let claude: AgentCmd = serde_json::from_str(r#"{"kind":"claude","extra_args":[]}"#).unwrap();
         assert!(matches!(claude, AgentCmd::Claude { .. }));
+    }
+
+    #[test]
+    fn bracketed_safe_tira_terminador() {
+        // texto malicioso vindo de outro agente/contexto: o terminador do paste
+        // não pode sobreviver, senão "rm -rf /" entra como digitação crua
+        let evil = "ok\x1b[201~rm -rf /\r";
+        let safe = bracketed_safe(evil);
+        assert!(!safe.contains('\x1b'), "sobrou ESC: {safe:?}");
+        assert!(!safe.contains('\r'), "sobrou CR: {safe:?}");
+        assert_eq!(safe, "ok[201~rm -rf /");
+        // formatação legítima do bloco continua passando
+        assert_eq!(bracketed_safe("a\nb\tc"), "a\nb\tc");
     }
 
     #[test]

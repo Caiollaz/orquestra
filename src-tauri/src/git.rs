@@ -54,10 +54,44 @@ pub fn create_floor(repo_path: String, slug: String) -> Result<Floor, String> {
     Ok(Floor { slug, branch, path: path_str })
 }
 
+/// Arquivos pendentes (não commitados) dentro do worktree do floor.
+/// Vazio = seguro remover. Worktree inexistente/sem git devolve vazio: o
+/// `worktree remove` reporta o erro de verdade depois.
+pub fn pending_changes(worktree: &Path) -> Vec<String> {
+    let dir = worktree.to_string_lossy().to_string();
+    git(&dir, &["status", "--porcelain"])
+        .unwrap_or_default()
+        .lines()
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty())
+        .collect()
+}
+
+/// Remove o floor. Sem `force`, recusa se houver trabalho não commitado —
+/// regra 8: floor não pode destruir trabalho sem --force explícito.
 #[tauri::command]
-pub fn remove_floor(repo_path: String, slug: String) -> Result<(), String> {
+pub fn remove_floor(repo_path: String, slug: String, force: Option<bool>) -> Result<(), String> {
     let path = worktree_path(&repo_path, &slug);
-    git(&repo_path, &["worktree", "remove", "--force", &path.to_string_lossy()])?;
+    let forced = force.unwrap_or(false);
+    if !forced {
+        let pending = pending_changes(&path);
+        if !pending.is_empty() {
+            let amostra: Vec<&str> = pending.iter().take(5).map(String::as_str).collect();
+            return Err(format!(
+                "floor \"{slug}\" tem {} alteração(ões) não commitada(s): {}{}. Commite, ou remova com força pra descartar.",
+                pending.len(),
+                amostra.join(", "),
+                if pending.len() > 5 { ", …" } else { "" }
+            ));
+        }
+    }
+    let path_str = path.to_string_lossy().to_string();
+    let mut args = vec!["worktree", "remove"];
+    if forced {
+        args.push("--force");
+    }
+    args.push(&path_str);
+    git(&repo_path, &args)?;
     Ok(())
 }
 
@@ -94,7 +128,38 @@ mod tests {
         assert_eq!(f.branch, "orquestra/feature-um");
         assert!(Path::new(&f.path).join("f.txt").exists(), "worktree deve ter o arquivo");
 
-        remove_floor(repo.clone(), "feature-um".into()).unwrap();
+        // regra 8: com trabalho não commitado, remover sem force é recusado
+        std::fs::write(Path::new(&f.path).join("rascunho.txt"), "trabalho").unwrap();
+        assert!(!pending_changes(Path::new(&f.path)).is_empty());
+        let err = remove_floor(repo.clone(), "feature-um".into(), None).unwrap_err();
+        assert!(err.contains("rascunho.txt"), "erro deve listar o pendente: {err}");
+        assert!(Path::new(&f.path).exists(), "floor sujo não pode ser removido sem force");
+
+        // limpo (ou com force explícito) remove de verdade
+        std::fs::remove_file(Path::new(&f.path).join("rascunho.txt")).unwrap();
+        remove_floor(repo.clone(), "feature-um".into(), None).unwrap();
+        assert!(!Path::new(&f.path).exists());
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn remove_floor_com_force_descarta() {
+        let tmp = std::env::temp_dir().join(format!("orq-git-f-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let repo = tmp.to_string_lossy().to_string();
+        if git(&repo, &["init", "-q"]).is_err() {
+            std::fs::remove_dir_all(&tmp).ok();
+            return;
+        }
+        git(&repo, &["config", "user.email", "t@t"]).unwrap();
+        git(&repo, &["config", "user.name", "t"]).unwrap();
+        std::fs::write(tmp.join("f.txt"), "x").unwrap();
+        git(&repo, &["add", "-A"]).unwrap();
+        git(&repo, &["commit", "-qm", "init"]).unwrap();
+
+        let f = create_floor(repo.clone(), "descartavel".into()).unwrap();
+        std::fs::write(Path::new(&f.path).join("rascunho.txt"), "trabalho").unwrap();
+        remove_floor(repo.clone(), "descartavel".into(), Some(true)).unwrap();
         assert!(!Path::new(&f.path).exists());
         std::fs::remove_dir_all(&tmp).ok();
     }

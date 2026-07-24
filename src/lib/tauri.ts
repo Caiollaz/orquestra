@@ -26,6 +26,8 @@ export const killAgent = (agentId: string) =>
   invoke<void>("kill_agent", { agentId });
 export const forwardOutput = (toAgent: string, text: string) =>
   invoke<void>("forward_output", { toAgent, text });
+/// ids dos agentes com PTY vivo (o front usa pra não semear contexto duas vezes)
+export const liveAgents = () => invoke<string[]>("live_agents");
 
 // ── papéis (roles.rs) ───────────────────────────────────────────────
 export type Role = { file: string; name: string; agent: string; description: string; body: string };
@@ -35,10 +37,22 @@ export const deleteRole = (repoPath: string, file: string) => invoke<void>("dele
 export const applyRole = (agentId: string, role: Role, vars: Record<string, string> = {}) =>
   invoke<void>("apply_role", { agentId, role, vars });
 
+// ── contextos (contexts.rs) ─────────────────────────────────────────
+// Contexto = bloco de conhecimento (regras de negócio, arquitetura, contratos)
+// empilhável em qualquer agente. Papel = quem o agente é; contexto = o que sabe.
+export type Context = { file: string; name: string; description: string; body: string };
+export const listContexts = (repoPath: string) => invoke<Context[]>("list_contexts", { repoPath });
+export const saveContext = (repoPath: string, context: Context) => invoke<void>("save_context", { repoPath, context });
+export const deleteContext = (repoPath: string, file: string) => invoke<void>("delete_context", { repoPath, file });
+export const applyContexts = (agentId: string, contexts: Context[], vars: Record<string, string> = {}) =>
+  invoke<void>("apply_contexts", { agentId, contexts, vars });
+
 // ── floors / worktrees (git.rs) ─────────────────────────────────────
 export type Floor = { slug: string; branch: string; path: string };
 export const createFloor = (repoPath: string, slug: string) => invoke<Floor>("create_floor", { repoPath, slug });
-export const removeFloor = (repoPath: string, slug: string) => invoke<void>("remove_floor", { repoPath, slug });
+/// sem `force`, o Rust recusa remover floor com trabalho não commitado (regra 8)
+export const removeFloor = (repoPath: string, slug: string, force = false) =>
+  invoke<void>("remove_floor", { repoPath, slug, force });
 
 // ── workspaces (workspace.rs) ───────────────────────────────────────
 export type Viewport = { x: number; y: number; zoom: number };

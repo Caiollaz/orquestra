@@ -2,7 +2,7 @@
 // index.json lista os workspaces; workspaces/<id>.json guarda o estado completo (layout incluso).
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
@@ -85,7 +85,30 @@ fn read_index() -> Vec<WorkspaceMeta> {
 }
 fn write_index(list: &[WorkspaceMeta]) -> Result<(), String> {
     fs::create_dir_all(base_dir()).map_err(|e| e.to_string())?;
-    fs::write(index_path(), serde_json::to_string_pretty(list).unwrap()).map_err(|e| e.to_string())
+    let json = serde_json::to_string_pretty(list).map_err(|e| e.to_string())?;
+    write_atomic(&index_path(), &json)
+}
+
+/// Timestamp de criação. Segundos de epoch em texto — sem `chrono` só pra um
+/// campo de metadado que ninguém formata (o front não lê `createdAt`).
+fn now_iso() -> String {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs().to_string())
+        .unwrap_or_default()
+}
+
+/// Escrita atômica: grava num `.tmp` irmão e renomeia (rename é atômico no
+/// mesmo filesystem, e no Windows o `std::fs::rename` substitui o destino).
+/// O autosave grava a cada 1.2s — um crash no meio de um `fs::write` direto
+/// deixava JSON truncado e levava o canvas inteiro do usuário.
+fn write_atomic(path: &Path, data: &str) -> Result<(), String> {
+    let tmp = path.with_extension("tmp");
+    fs::write(&tmp, data).map_err(|e| e.to_string())?;
+    fs::rename(&tmp, path).map_err(|e| {
+        let _ = fs::remove_file(&tmp);
+        e.to_string()
+    })
 }
 
 #[tauri::command]
@@ -111,10 +134,17 @@ pub fn delete_workspace(id: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn save_workspace(workspace: Workspace) -> Result<(), String> {
+pub fn save_workspace(mut workspace: Workspace) -> Result<(), String> {
+    if workspace.id.is_empty() || workspace.id.contains(['/', '\\', '.']) {
+        return Err(format!("id de workspace inválido: {}", workspace.id));
+    }
     fs::create_dir_all(ws_dir()).map_err(|e| e.to_string())?;
+    if workspace.created_at.is_empty() {
+        workspace.created_at = now_iso();
+    }
     let p = ws_dir().join(format!("{}.json", workspace.id));
-    fs::write(&p, serde_json::to_string_pretty(&workspace).unwrap()).map_err(|e| e.to_string())?;
+    let json = serde_json::to_string_pretty(&workspace).map_err(|e| e.to_string())?;
+    write_atomic(&p, &json)?;
     // upsert no índice
     let mut idx = read_index();
     let meta = WorkspaceMeta { id: workspace.id.clone(), name: workspace.name.clone(), repo_path: workspace.repo_path.clone() };
@@ -129,8 +159,13 @@ pub fn save_workspace(workspace: Workspace) -> Result<(), String> {
 mod tests {
     use super::*;
 
+    /// ORQUESTRA_HOME é global do processo e os testes rodam em paralelo:
+    /// quem mexe nele precisa entrar em fila, senão um lê o tmp do outro.
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn roundtrip_workspace() {
+        let _fila = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let tmp = std::env::temp_dir().join(format!("orq-test-{}", uuid::Uuid::new_v4()));
         std::env::set_var("ORQUESTRA_HOME", &tmp);
 
@@ -159,6 +194,45 @@ mod tests {
         // canvas roundtrip opaco (nós de qualquer tipo + arestas)
         assert_eq!(got.canvas["nodes"][0]["data"]["text"], "olá");
         assert_eq!(got.canvas["edges"][0]["target"], "b");
+
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn save_e_atomico_e_nao_duplica_indice() {
+        let _fila = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let tmp = std::env::temp_dir().join(format!("orq-test-{}", uuid::Uuid::new_v4()));
+        std::env::set_var("ORQUESTRA_HOME", &tmp);
+
+        let ws = Workspace {
+            id: "w2".into(),
+            name: "Y".into(),
+            repo_path: "/repo/y".into(),
+            created_at: String::new(),
+            viewport: Viewport { x: 0.0, y: 0.0, zoom: 1.0 },
+            agents: vec![],
+            floors: vec![],
+            canvas: serde_json::json!({}),
+        };
+        save_workspace(ws.clone()).unwrap();
+        save_workspace(ws.clone()).unwrap();
+
+        // upsert: dois saves = uma entrada só
+        assert_eq!(list_workspaces().unwrap().len(), 1);
+        // createdAt é preenchido quando vem vazio
+        assert!(!load_workspace("w2".into()).unwrap().created_at.is_empty());
+        // a escrita atômica não deixa .tmp pra trás
+        let sobras: Vec<_> = std::fs::read_dir(ws_dir())
+            .unwrap()
+            .flatten()
+            .filter(|e| e.file_name().to_string_lossy().ends_with(".tmp"))
+            .collect();
+        assert!(sobras.is_empty(), "sobrou tmp: {sobras:?}");
+
+        // id que escaparia do diretório é recusado
+        let mut mau = ws;
+        mau.id = "../fora".into();
+        assert!(save_workspace(mau).is_err());
 
         std::fs::remove_dir_all(&tmp).ok();
     }

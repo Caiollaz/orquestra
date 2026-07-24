@@ -96,9 +96,9 @@ pub fn parse_role(file: &str, raw: &str) -> Role {
 /// Valida nome de arquivo vindo do front antes de tocar o disco: só
 /// `[a-z0-9-].md`. Barra `../`, caminho absoluto e qualquer travessia.
 pub(crate) fn file_ok(file: &str) -> Result<(), String> {
-    let ok = !file.is_empty()
-        && file.ends_with(".md")
-        && file[..file.len() - 3].chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
+    let stem = file.strip_suffix(".md").unwrap_or("");
+    let ok = !stem.is_empty()
+        && stem.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
     if ok { Ok(()) } else { Err(format!("nome de arquivo inválido: {file}")) }
 }
 

@@ -1,3 +1,4 @@
+mod contexts;
 mod editor;
 mod git;
 mod pty;
@@ -11,6 +12,11 @@ use tauri::{Manager, RunEvent};
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .setup(|_| {
+            // resolve o PATH do shell de login em background: 1º spawn não espera
+            std::thread::spawn(pty::prewarm_path);
+            Ok(())
+        })
         .manage(PtyState::default())
         .invoke_handler(tauri::generate_handler![
             pty::spawn_agent,
@@ -18,10 +24,15 @@ pub fn run() {
             pty::resize_pty,
             pty::kill_agent,
             pty::forward_output,
+            pty::live_agents,
             roles::list_roles,
             roles::save_role,
             roles::delete_role,
             roles::apply_role,
+            contexts::list_contexts,
+            contexts::save_context,
+            contexts::delete_context,
+            contexts::apply_contexts,
             workspace::list_workspaces,
             workspace::load_workspace,
             workspace::save_workspace,
