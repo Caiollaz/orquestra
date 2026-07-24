@@ -17,7 +17,7 @@
   --brass-dim: #8a744f;
   --exited: #cf6a55;
   --radius: 8px;
-  --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
 * { box-sizing: border-box; }

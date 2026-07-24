@@ -12,7 +12,7 @@ export function XtermView({ agentId, cmd, cwd }: { agentId: string; cmd: AgentCm
 
   useEffect(() => {
     const term = new Terminal({
-      fontFamily: '"IBM Plex Mono", ui-monospace, monospace',
+      fontFamily: '"JetBrains Mono", ui-monospace, monospace',
       fontSize: 12,
       cursorBlink: true,
       // canvas addon (não webgl): não estoura contextos com N terminais no canvas
