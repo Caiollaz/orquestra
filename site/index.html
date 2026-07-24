@@ -3,491 +3,416 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>orquestra — reja seus agentes de código</title>
-  <meta name="description" content="App desktop com um canvas infinito de terminais interativos. Crie agentes claude, dê papéis, isole cada um num worktree e faça eles conversarem." />
-  <meta property="og:title" content="orquestra — reja seus agentes de código" />
-  <meta property="og:description" content="Um canvas. Vários agentes claude. Você no pódio." />
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23131110'/%3E%3Ccircle cx='16' cy='16' r='7' fill='none' stroke='%23c69a55' stroke-width='2.5'/%3E%3Cline x1='21' y1='21' x2='26' y2='26' stroke='%23c69a55' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E" />
+  <title>orquestra — você rege, eles escrevem</title>
+  <meta name="description" content="App desktop com um canvas infinito de terminais interativos. Vários agentes claude tocando ao mesmo tempo: você dá contexto, liga um no outro e acompanha tudo." />
+  <meta property="og:title" content="orquestra — você rege, eles escrevem" />
+  <meta property="og:description" content="Um canvas. Quatro vozes. O mesmo eixo de tempo." />
+  <meta name="theme-color" content="#14121f" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2314121f'/%3E%3Cpath d='M4 11h24M4 21h24' stroke='%23332c4c' stroke-width='1.5'/%3E%3Crect x='7' y='8.5' width='9' height='5' rx='1.5' fill='%23a98cf5'/%3E%3Crect x='14' y='18.5' width='11' height='5' rx='1.5' fill='%23f2c230'/%3E%3C/svg%3E" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,300;0,400;0,600;0,800;1,300;1,400;1,800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,400..700;1,6..96,400..600&family=Archivo:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <style>
     :root {
-      --bg: #131110;
-      --panel: #1c1917;
-      --panel-2: #252120;
-      --border: #322c28;
-      --text: #eae4da;
-      --muted: #9c9186;
-      --brass: #c69a55;
-      --brass-dim: #8a744f;
-      --strings: #b3543f;
-      --woods: #6f8f5e;
-      --perc: #7d8fa8;
-      --note: #d9c483;
+      --fosso: #14121f;      /* fundo: escuridão do fosso da orquestra */
+      --painel: #1e1a2e;
+      --pauta: #332c4c;      /* linha da pauta / bordas */
+      --papel: #e9e7f2;
+      --tinta-fraca: #9a94b0;
+      --enxofre: #f2c230;    /* claude · dev + ação */
+      --lilas: #a98cf5;      /* claude · po */
+      --teal: #52c7b8;       /* shell */
+      --rosa: #ec6a93;       /* nota */
+
+      --display: "Bodoni Moda", Georgia, serif;
+      --corpo: "Archivo", system-ui, sans-serif;
       --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+      --compasso: 14s;       /* duração de uma passada da cabeça de leitura */
     }
 
-    * { box-sizing: border-box; margin: 0; }
+    *, *::before, *::after { box-sizing: border-box; }
+    body, h1, h2, h3, p, ul, li, figure { margin: 0; padding: 0; }
     html { scroll-behavior: smooth; }
     body {
-      background: var(--bg);
-      color: var(--text);
-      font: 400 15px/1.65 var(--mono);
+      background: var(--fosso);
+      color: var(--papel);
+      font: 400 16px/1.6 var(--corpo);
       -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
     }
     a { color: inherit; }
-    :focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
+    :focus-visible { outline: 2px solid var(--enxofre); outline-offset: 3px; border-radius: 2px; }
+    ul { list-style: none; }
 
-    .wrap { max-width: 1060px; margin: 0 auto; padding: 0 24px; }
+    .wrap { max-width: 1080px; margin: 0 auto; padding: 0 28px; }
 
-    /* ---- nav ------------------------------------------------- */
+    .rotulo {                     /* eyebrow: sempre mono, sempre minúsculo */
+      font: 500 11.5px/1 var(--mono);
+      letter-spacing: 0.16em;
+      color: var(--tinta-fraca);
+      text-transform: lowercase;
+    }
+
+    /* ---- cabeçalho -------------------------------------------- */
     nav {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 22px 0;
+      display: flex; align-items: baseline; justify-content: space-between;
+      gap: 20px; padding: 26px 0 0;
     }
-    .wordmark { font-weight: 600; letter-spacing: 0.14em; font-size: 15px; text-decoration: none; }
-    .wordmark em { color: var(--brass); font-style: italic; }
-    .nav-links { display: flex; gap: 22px; font-size: 13px; }
-    .nav-links a { color: var(--muted); text-decoration: none; white-space: nowrap; }
-    .nav-links a:hover { color: var(--text); }
+    .marca {
+      font: 400 22px/1 var(--display);
+      letter-spacing: 0.01em; text-decoration: none;
+    }
+    .marca em { font-style: italic; color: var(--enxofre); }
+    .marca span { font: 500 11px/1 var(--mono); color: var(--tinta-fraca); margin-left: 10px; letter-spacing: 0.08em; }
+    .nav-links { display: flex; gap: 24px; font: 500 12.5px/1 var(--mono); }
+    .nav-links a { color: var(--tinta-fraca); text-decoration: none; }
+    .nav-links a:hover { color: var(--papel); }
 
-    /* ---- hero ------------------------------------------------ */
-    header.hero {
-      position: relative;
-      overflow: hidden; /* contém o brilho ambiente (hero-glow) */
-      padding: 72px 0 48px;
-      background:
-        radial-gradient(ellipse 60% 50% at 50% 0%, rgba(198, 154, 85, 0.07), transparent),
-        radial-gradient(circle, #302a25 1.2px, transparent 1.2px);
-      background-size: auto, 26px 26px;
-    }
-    .eyebrow {
-      display: inline-block;
-      font-size: 12px; letter-spacing: 0.12em;
-      color: var(--brass);
-      border: 1px solid var(--brass-dim);
-      border-radius: 999px;
-      padding: 4px 14px;
-      margin-bottom: 28px;
-    }
+    /* ---- herói ------------------------------------------------ */
+    .heroi { padding: 84px 0 0; }
     h1 {
-      font-size: clamp(29px, 6.5vw, 58px);
-      line-height: 1.12;
-      font-weight: 800;
-      letter-spacing: -0.03em;
+      font: 400 clamp(46px, 10.5vw, 104px)/0.94 var(--display);
+      letter-spacing: -0.015em;
+      max-width: 15ch;
     }
-    h1 em { font-style: italic; font-weight: 300; color: var(--brass); letter-spacing: 0; }
+    h1 em {
+      font-style: italic; font-weight: 500;
+      color: var(--enxofre);
+    }
     .sub {
-      margin-top: 22px;
-      max-width: 58ch;
-      color: var(--muted);
-      font-size: 15px;
+      margin-top: 28px; max-width: 54ch;
+      font-size: 17px; color: var(--tinta-fraca);
     }
-    .sub strong { color: var(--text); font-weight: 600; }
-    .cta-row { display: flex; gap: 14px; margin-top: 34px; flex-wrap: wrap; }
+    .sub strong { color: var(--papel); font-weight: 500; }
+    .sub code { font: 400 15px/1 var(--mono); color: var(--enxofre); }
+
+    .acoes { display: flex; align-items: center; gap: 16px; margin-top: 36px; flex-wrap: wrap; }
     .btn {
-      display: inline-block;
-      padding: 12px 22px;
-      border-radius: 8px;
-      text-decoration: none;
-      font-weight: 600; font-size: 14px;
-      letter-spacing: 0.02em;
+      display: inline-block; padding: 13px 24px;
+      font: 500 14px/1 var(--corpo); letter-spacing: 0.01em;
+      text-decoration: none; border-radius: 3px;
+      border: 1px solid transparent;
+      transition: background-color 120ms ease, border-color 120ms ease;
     }
-    .btn-brass { background: var(--brass); color: #1a1509; }
-    .btn-brass:hover { background: #d8ad66; }
-    .btn-ghost { border: 1px solid var(--border); color: var(--text); }
-    .btn-ghost:hover { border-color: var(--brass-dim); background: var(--panel); }
-    .cta-note { margin-top: 14px; font-size: 12px; color: var(--muted); }
+    .btn-tutti { background: var(--enxofre); color: #1a1503; font-weight: 600; }
+    .btn-tutti:hover { background: #ffd551; }
+    .btn-solo { border-color: var(--pauta); color: var(--papel); }
+    .btn-solo:hover { border-color: var(--tinta-fraca); background: var(--painel); }
+    .formatos { margin-top: 16px; font: 400 12px/1.7 var(--mono); color: var(--tinta-fraca); }
 
-    /* ---- mock do canvas -------------------------------------- */
-    .stage {
-      position: relative;
-      margin: 64px auto 0;
-      height: 430px;
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      background:
-        radial-gradient(circle, #2a2520 1.2px, transparent 1.2px);
-      background-size: 26px 26px;
-      background-color: #161311;
-      overflow: hidden;
-      box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5);
-    }
-    .stage svg.edges { position: absolute; inset: 0; width: 100%; height: 100%; }
-    .edge {
-      fill: none; stroke: var(--brass-dim); stroke-width: 1.5;
-      stroke-dasharray: 6 5;
-      animation: flow 1.2s linear infinite;
-    }
-    @keyframes flow { to { stroke-dashoffset: -11; } }
+    /* ---- a tira de partitura (assinatura) --------------------- */
+    .tira { margin-top: 76px; }
+    .tira-rolo { overflow-x: auto; overscroll-behavior-x: contain; padding-bottom: 6px; }
+    .tira svg { display: block; width: 100%; min-width: 840px; height: auto; }
 
-    .node {
-      position: absolute;
-      display: flex; flex-direction: column;
-      background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      overflow: hidden;
-      box-shadow: 0 10px 32px rgba(0, 0, 0, 0.45);
-    }
-    /* pulso de mensagem viajando pelo cabo implementador → revisor */
-    .pulse { fill: var(--brass); filter: drop-shadow(0 0 4px var(--brass)); opacity: 0; }
-    /* brilho ambiente do herói (camada ambient) */
-    .hero-glow {
-      position: absolute; left: 50%; top: -80px; transform: translateX(-50%);
-      width: 620px; height: 380px; pointer-events: none; z-index: -1;
-      background: radial-gradient(ellipse 50% 50% at 50% 50%, rgba(198,154,85,0.14), transparent 70%);
-    }
+    .voz { font: 500 11px/1 var(--mono); letter-spacing: 0.04em; }
+    .linha-pauta { stroke: var(--pauta); stroke-width: 1; vector-effect: non-scaling-stroke; }
+    .barra { fill: var(--cor); }
+    .cabo { fill: none; stroke: var(--cor); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+    .cabeca { fill: var(--cor); }
+    .msg { font: 400 10px/1 var(--mono); fill: var(--cor); letter-spacing: 0.01em; }
 
-    .node-head {
-      display: flex; align-items: center; gap: 7px;
-      padding: 6px 10px;
-      background: var(--panel-2);
-      border-bottom: 1px solid #292420;
-      font-size: 11px; font-weight: 600; letter-spacing: 0.04em;
-      color: var(--muted);
-    }
-    .lamp {
-      width: 7px; height: 7px; border-radius: 50%;
-      background: var(--sec);
-      box-shadow: 0 0 6px var(--sec);
-    }
-    .node-body {
-      flex: 1;
-      padding: 9px 11px;
-      background: #14110f;
-      font-size: 11.5px; line-height: 1.55;
-      color: #d8d0c4;
-      white-space: pre-wrap;
-    }
-    .node-body .dim { color: #6b6259; }
-    .node-body .ok { color: #8fa876; }
-    .node-body .brass { color: var(--brass); }
-    .cursor {
-      display: inline-block; width: 7px; height: 13px;
-      background: var(--brass);
-      vertical-align: -2px;
-      animation: blink 1.1s steps(1) infinite;
-    }
-    @keyframes blink { 50% { opacity: 0; } }
+    /* o que ainda não tocou fica sob um véu da cor do fundo; a cabeça de leitura
+       e o véu compartilham a mesma animação, então andam colados */
+    .veu, .cabeca-leitura { animation: reger var(--compasso) linear infinite; }
+    .veu { fill: var(--fosso); opacity: 0.6; }
+    .cabeca-leitura { stroke: var(--enxofre); stroke-width: 1; opacity: 0.75; vector-effect: non-scaling-stroke; }
+    @keyframes reger { from { transform: translateX(112px); } to { transform: translateX(1000px); } }
 
-    .node.note-mock { background: #201b12; border-color: #453a20; }
-    .node.note-mock .node-head { background: #2a2415; border-bottom-color: #3a3120; color: var(--note); font-style: italic; }
-    .node.note-mock .node-body { background: transparent; color: #e8dfc9; }
+    .tira-pe {
+      display: flex; justify-content: space-between; gap: 24px; flex-wrap: wrap;
+      margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--pauta);
+    }
+    .tira-pe p { font-size: 13.5px; color: var(--tinta-fraca); max-width: 62ch; }
 
     /* ---- seções ----------------------------------------------- */
-    section { padding: 88px 0; }
-    .sec-label {
-      font-size: 12px; letter-spacing: 0.14em; color: var(--brass);
-      margin-bottom: 14px;
-    }
+    section { padding: 104px 0 0; }
     h2 {
-      font-size: clamp(24px, 3.6vw, 34px);
-      font-weight: 800; letter-spacing: -0.02em;
-      line-height: 1.2;
-      max-width: 24ch;
+      margin-top: 16px;
+      font: 400 clamp(28px, 4.4vw, 44px)/1.1 var(--display);
+      letter-spacing: -0.01em; max-width: 22ch;
     }
+    h2 em { font-style: italic; color: var(--enxofre); }
 
-    .naipes {
-      margin-top: 44px;
+    /* instrumentação: a sintaxe real do produto na margem esquerda */
+    .instr { margin-top: 48px; border-top: 1px solid var(--pauta); }
+    .instr li {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
-      gap: 16px;
+      grid-template-columns: 15.5rem 1fr;
+      gap: 8px 32px;
+      padding: 22px 0;
+      border-bottom: 1px solid var(--pauta);
     }
-    .naipe {
-      background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 22px 20px;
+    .sintaxe {
+      font: 400 12.5px/1.5 var(--mono);
+      color: var(--cor, var(--tinta-fraca));
+      padding-top: 3px;
+      overflow-wrap: anywhere;
     }
-    .naipe .naipe-sec {
-      font-size: 11px; font-style: italic; letter-spacing: 0.08em;
-      color: var(--sec);
-      margin-bottom: 12px;
+    .instr h3 { font: 500 16px/1.3 var(--corpo); margin-bottom: 5px; }
+    .instr p { font-size: 14.5px; color: var(--tinta-fraca); max-width: 58ch; }
+    .instr p code { font: 400 13px/1 var(--mono); color: var(--papel); }
+
+    /* partitura: marcas de ensaio — a única sequência real da página */
+    .ensaio { margin-top: 48px; display: grid; gap: 28px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+    .ensaio > li { display: grid; grid-template-columns: 32px 1fr; gap: 16px; align-items: start; }
+    .marca-ensaio {
+      display: grid; place-items: center;
+      width: 30px; height: 30px;
+      border: 1px solid var(--enxofre); color: var(--enxofre);
+      font: 500 13px/1 var(--mono);
     }
-    .naipe h3 { font-size: 15px; font-weight: 600; margin-bottom: 8px; }
-    .naipe p { font-size: 13px; color: var(--muted); }
-    .chip {
-      display: inline-block; margin-left: 8px;
-      font-size: 10px; font-style: normal; letter-spacing: 0.06em;
-      color: var(--muted); border: 1px solid var(--border);
-      border-radius: 999px; padding: 1px 8px;
-      vertical-align: 1px;
+    .ensaio h3 { font: 500 16px/1.3 var(--corpo); margin-bottom: 6px; }
+    .ensaio p { font-size: 14.5px; color: var(--tinta-fraca); }
+    .ensaio kbd {
+      font: 500 12px/1 var(--mono);
+      background: var(--painel); border: 1px solid var(--pauta);
+      border-radius: 3px; padding: 3px 6px; white-space: nowrap;
     }
 
-    /* ---- como funciona ---------------------------------------- */
-    .steps { margin-top: 44px; display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
-    .step { border-left: 2px solid var(--brass-dim); padding: 4px 0 4px 20px; }
-    .step kbd {
-      font: 600 12px var(--mono);
-      background: var(--panel-2); border: 1px solid var(--border);
-      border-radius: 5px; padding: 2px 7px;
-    }
-    .step h3 { font-size: 14px; font-weight: 600; margin-bottom: 8px; }
-    .step p { font-size: 13px; color: var(--muted); }
-
-    /* ---- download --------------------------------------------- */
-    #download .dl-box {
-      margin-top: 40px;
-      background: var(--panel);
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      padding: 40px 36px;
+    /* estreia */
+    .estreia-caixa {
+      margin-top: 44px; padding: 40px;
+      background: var(--painel); border: 1px solid var(--pauta);
       display: flex; align-items: center; justify-content: space-between;
-      gap: 28px; flex-wrap: wrap;
+      gap: 32px; flex-wrap: wrap;
     }
-    .platforms { font-size: 13px; color: var(--muted); }
-    .platforms b { color: var(--text); font-weight: 600; }
+    .plataformas { font: 400 13.5px/2 var(--mono); color: var(--tinta-fraca); }
+    .plataformas b { color: var(--papel); font-weight: 500; }
 
     footer {
-      border-top: 1px solid var(--border);
-      padding: 30px 0 44px;
-      font-size: 12px; color: var(--muted);
-      display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+      margin-top: 104px; padding: 26px 0 56px;
+      border-top: 1px solid var(--pauta);
+      display: flex; justify-content: space-between; gap: 20px; flex-wrap: wrap;
+      font: 400 12.5px/1.6 var(--mono); color: var(--tinta-fraca);
     }
-    footer a { color: var(--muted); }
-    footer a:hover { color: var(--text); }
+    footer em { font-family: var(--display); font-size: 14px; color: var(--enxofre); }
 
-    @media (max-width: 720px) {
-      /* mock vira pilha: nós estáticos, sem arestas */
-      .stage { height: auto; padding: 16px; display: grid; gap: 12px; }
-      .stage svg.edges { display: none; }
-      .stage .node { position: static !important; width: auto !important; height: auto !important; min-height: 90px; }
-      section { padding: 64px 0; }
+    @media (max-width: 760px) {
+      .heroi { padding-top: 56px; }
+      h1 { max-width: none; }
+      section { padding-top: 76px; }
+      .tira { margin-top: 52px; }
+      .instr li { grid-template-columns: 1fr; gap: 6px; padding: 20px 0; }
+      .sintaxe { padding-top: 0; }
+      .estreia-caixa { padding: 28px 24px; }
+      footer { margin-top: 76px; }
     }
-    @media (max-width: 540px) {
-      nav { flex-direction: column; align-items: flex-start; gap: 10px; padding: 18px 0 12px; }
-      header.hero { padding: 44px 0 40px; }
-      .eyebrow { font-size: 11px; padding: 4px 12px; margin-bottom: 22px; }
-      .sub { font-size: 14px; }
-      .cta-row { gap: 10px; }
-      .btn { padding: 12px 18px; }
-      .stage { margin-top: 44px; }
-      #download .dl-box { padding: 28px 22px; }
+    @media (max-width: 520px) {
+      nav { flex-direction: column; gap: 14px; }
+      .nav-links { gap: 18px; }
+      .btn { padding: 13px 20px; }
     }
+
     @media (prefers-reduced-motion: reduce) {
-      * { animation: none !important; transition: none !important; }
       html { scroll-behavior: auto; }
+      .veu, .cabeca-leitura { display: none; }         /* partitura inteira acesa */
+      * { transition: none !important; }
     }
   </style>
 </head>
 <body>
   <div class="wrap">
     <nav>
-      <a class="wordmark" href="#">or<em>q</em>uestra</a>
+      <a class="marca" href="#">or<em>q</em>uestra<span>v0.6.0</span></a>
       <div class="nav-links">
-        <a href="#naipes">recursos</a>
-        <a href="#como">como funciona</a>
+        <a href="#instrumentacao">instrumentação</a>
+        <a href="#partitura">como funciona</a>
         <a href="https://github.com/Caiollaz/orquestra">github</a>
       </div>
     </nav>
-  </div>
 
-  <header class="hero">
-    <span class="hero-glow" aria-hidden="true"></span>
-    <div class="wrap">
-      <span class="eyebrow">app desktop · linux / windows / macos · código aberto</span>
-      <h1>Vários agentes claude.<br />Um maestro: <em>você.</em></h1>
+    <header class="heroi">
+      <p class="rotulo">app desktop · linux · windows · macos</p>
+      <h1>Você <em>rege.</em><br />Eles escrevem.</h1>
       <p class="sub">
-        <strong>orquestra</strong> é um canvas infinito de terminais interativos de verdade.
-        Crie agentes, dê contexto, conecte um ao outro e acompanhe tudo
-        acontecendo em paralelo — <strong>à vista, sob seu comando</strong>.
+        <strong>orquestra</strong> põe vários agentes claude num canvas infinito, e cada nó
+        é um terminal de verdade. Eles se falam por endereço — <code>⇢shell-1: pnpm test</code> —
+        enquanto você acompanha tudo lado a lado e interrompe qualquer um a qualquer hora.
       </p>
-      <div class="cta-row">
-        <a class="btn btn-brass" href="https://github.com/Caiollaz/orquestra/releases">Baixar o app</a>
-        <a class="btn btn-ghost" href="https://github.com/Caiollaz/orquestra">Ver o código</a>
+      <div class="acoes">
+        <a class="btn btn-tutti" href="https://github.com/Caiollaz/orquestra/releases/latest">Baixar o app</a>
+        <a class="btn btn-solo" href="https://github.com/Caiollaz/orquestra">Ver o código</a>
       </div>
-      <p class="cta-note">.deb · .AppImage · .exe · .dmg — direto dos releases.</p>
+      <p class="formatos">.deb · .rpm · .AppImage · .exe · .msi · .dmg</p>
 
-      <!-- mock do canvas: o produto é o herói -->
-      <div class="stage" aria-hidden="true">
-        <svg class="edges" viewBox="0 0 1000 430" preserveAspectRatio="none">
-          <path class="edge" d="M 300 105 C 350 105, 350 200, 400 200" />
-          <path class="edge" d="M 300 314 C 350 314, 350 245, 400 245" />
-          <path class="edge" id="wire" d="M 720 220 C 742 220, 738 125, 760 125" />
-          <circle class="pulse" r="4" cx="720" cy="220" />
-        </svg>
+      <!-- ASSINATURA: uma sessão lida como partitura — quatro vozes, um eixo de tempo -->
+      <figure class="tira">
+        <div class="tira-rolo">
+          <svg viewBox="0 0 1000 240" role="img"
+               aria-label="Partitura de uma sessão: claude · po delega para claude · dev, que manda pnpm test para shell-1, recebe a saída de volta e registra o resultado numa nota.">
+            <!-- nomes das vozes na margem, como numa primeira página de partitura -->
+            <g text-anchor="end">
+              <text class="voz" x="100" y="31"  fill="#a98cf5">claude · po</text>
+              <text class="voz" x="100" y="91"  fill="#f2c230">claude · dev</text>
+              <text class="voz" x="100" y="151" fill="#52c7b8">shell-1</text>
+              <text class="voz" x="100" y="211" fill="#ec6a93">nota</text>
+            </g>
 
-        <div class="node note-mock" style="left: 4%; top: 10%; width: 26%; height: 30%;">
-          <div class="node-head">contexto</div>
-          <div class="node-body">Spec: exportar relatório CSV.
-Colunas: data, valor, status.
-Sem libs novas.</div>
-        </div>
+            <g>
+              <g>
+                <!-- pautas de uma linha, uma por voz -->
+                <line class="linha-pauta" x1="112" y1="28"  x2="1000" y2="28"  />
+                <line class="linha-pauta" x1="112" y1="88"  x2="1000" y2="88"  />
+                <line class="linha-pauta" x1="112" y1="148" x2="1000" y2="148" />
+                <line class="linha-pauta" x1="112" y1="208" x2="1000" y2="208" />
 
-        <div class="node" style="--sec: var(--strings); left: 4%; top: 58%; width: 26%; height: 30%;">
-          <div class="node-head"><span class="lamp"></span>shell</div>
-          <div class="node-body"><span class="ok">✓</span> testes: 14 passed
-<span class="dim">~/projeto</span> $ <span class="cursor"></span></div>
-        </div>
+                <!-- claude · po -->
+                <g style="--cor: var(--lilas)">
+                  <rect class="barra" x="140" y="22" width="110" height="12" rx="2" />
+                  <path class="cabo" d="M 250 28 C 271 28, 271 88, 292 88" />
+                  <circle class="cabeca" cx="292" cy="88" r="3.5" />
+                  <text class="msg" x="254" y="15">⇢claude-dev: implementa o export csv</text>
+                  <rect class="barra" x="860" y="22" width="120" height="12" rx="2" />
+                </g>
 
-        <div class="node" style="--sec: var(--brass); left: 40%; top: 26%; width: 32%; height: 50%;">
-          <div class="node-head"><span class="lamp"></span>claude · implementador</div>
-          <div class="node-body"><span class="brass">●</span> Lendo a spec recebida…
+                <!-- claude · dev -->
+                <g style="--cor: var(--enxofre)">
+                  <rect class="barra" x="292" y="82" width="138" height="12" rx="2" />
+                  <path class="cabo" d="M 430 88 C 451 88, 451 148, 472 148" />
+                  <circle class="cabeca" cx="472" cy="148" r="3.5" />
+                  <text class="msg" x="434" y="75">⇢shell-1: pnpm test</text>
+                  <rect class="barra" x="617" y="82" width="183" height="12" rx="2" />
+                  <path class="cabo" d="M 800 88 C 821 88, 821 208, 842 208" />
+                  <circle class="cabeca" cx="842" cy="208" r="3.5" />
+                  <text class="msg" x="804" y="75">⇢nota: 14 testes passando</text>
+                </g>
 
-Plano: criar <span class="ok">export.ts</span>, formatar
-colunas e escrever o CSV.
+                <!-- shell-1 -->
+                <g style="--cor: var(--teal)">
+                  <rect class="barra" x="472" y="142" width="103" height="12" rx="2" />
+                  <path class="cabo" d="M 575 148 C 596 148, 596 88, 617 88" />
+                  <circle class="cabeca" cx="617" cy="88" r="3.5" />
+                  <text class="msg" x="579" y="135">saída do teste ⇢ claude-dev</text>
+                </g>
 
-<span id="typed"></span><span class="cursor"></span></div>
-        </div>
+                <!-- nota -->
+                <g style="--cor: var(--rosa)">
+                  <rect class="barra" x="842" y="202" width="138" height="12" rx="2" />
+                </g>
+              </g>
+            </g>
 
-        <div class="node" style="--sec: var(--woods); left: 76%; top: 12%; width: 20%; height: 36%;">
-          <div class="node-head"><span class="lamp"></span>claude · revisor</div>
-          <div class="node-body"><span class="dim">aguardando saída
-do implementador…</span></div>
+            <rect class="veu" x="0" y="0" width="888" height="240" />
+            <line class="cabeca-leitura" x1="0" y1="8" x2="0" y2="232" />
+          </svg>
         </div>
-      </div>
-    </div>
-  </header>
+        <figcaption class="tira-pe">
+          <p>Uma sessão, quatro vozes, o mesmo eixo de tempo: ninguém espera a vez.</p>
+          <p class="rotulo">tempo →</p>
+        </figcaption>
+      </figure>
+    </header>
 
-  <div class="wrap">
-    <section id="naipes">
-      <p class="sec-label">— os naipes</p>
-      <h2>Tudo que uma orquestra precisa pra tocar junto.</h2>
-      <div class="naipes">
-        <div class="naipe" style="--sec: var(--brass);">
-          <p class="naipe-sec">latão</p>
-          <h3>Canvas multi-agente</h3>
-          <p>Terminais PTY reais num canvas com pan e zoom. Cada nó é um processo vivo: arraste, redimensione, encerre.</p>
-        </div>
-        <div class="naipe" style="--sec: var(--perc);">
-          <p class="naipe-sec">percussão</p>
-          <h3>Comunicação entre agentes</h3>
-          <p>Ligue nós com arestas e encaminhe a saída de um agente pro stdin de outro. Blocos de contexto alimentam vários de uma vez.</p>
-        </div>
-        <div class="naipe" style="--sec: var(--strings);">
-          <p class="naipe-sec">cordas <span class="chip">em breve</span></p>
-          <h3>Papéis</h3>
-          <p>Presets em markdown com variáveis. Um clique semeia o prompt do agente: PO, revisor, implementador — o elenco que você quiser.</p>
-        </div>
-        <div class="naipe" style="--sec: var(--woods);">
-          <p class="naipe-sec">madeiras <span class="chip">em breve</span></p>
-          <h3>Floors</h3>
-          <p>Cada agente num git worktree isolado. Trabalho paralelo em branches separadas, sem um pisar no código do outro.</p>
-        </div>
-      </div>
+    <section id="instrumentacao">
+      <p class="rotulo">— instrumentação</p>
+      <h2>Cada naipe entra com <em>uma</em> função.</h2>
+      <ul class="instr">
+        <li style="--cor: var(--enxofre)">
+          <p class="sintaxe">⇢nome: mensagem</p>
+          <div>
+            <h3>Agentes que conversam</h3>
+            <p>Ligue dois nós e a saída de um cai no stdin do outro. O claude delega comando pro shell, fala com outro claude, escreve numa nota. O cabo acende quando passa dado.</p>
+          </div>
+        </li>
+        <li style="--cor: var(--lilas)">
+          <p class="sintaxe">.orquestra/contexts/*.md</p>
+          <div>
+            <h3>Contextos empilháveis</h3>
+            <p>Regra de negócio, arquitetura, contrato — markdown, vários por agente. Os padrões do workspace entram sozinhos em todo agente claude novo.</p>
+          </div>
+        </li>
+        <li style="--cor: var(--lilas)">
+          <p class="sintaxe">.orquestra/roles/*.md</p>
+          <div>
+            <h3>Papéis</h3>
+            <p>Quem o agente é: um preset em markdown com <code>{{var}}</code>, aplicado num clique e com selo no cabeçalho do nó.</p>
+          </div>
+        </li>
+        <li style="--cor: var(--teal)">
+          <p class="sintaxe">git worktree</p>
+          <div>
+            <h3>Floors</h3>
+            <p>Um worktree por feature: os agentes trabalham em branches isoladas sem tocar na raiz. Apagar um floor com trabalho pendente exige confirmação explícita.</p>
+          </div>
+        </li>
+        <li style="--cor: var(--enxofre)">
+          <p class="sintaxe">Ctrl+K</p>
+          <div>
+            <h3>Batuta</h3>
+            <p>Paleta de comandos: cria nó, troca de workspace, aplica papel e contexto sem soltar o teclado.</p>
+          </div>
+        </li>
+        <li style="--cor: var(--teal)">
+          <p class="sintaxe">⇢portal-1: url</p>
+          <div>
+            <h3>Portais</h3>
+            <p>Um navegador dentro do canvas, dirigido pelo claude conectado. Site que bloqueia embed abre em janela nativa.</p>
+          </div>
+        </li>
+        <li style="--cor: var(--rosa)">
+          <p class="sintaxe">a cada N segundos</p>
+          <div>
+            <h3>Prompts agendados</h3>
+            <p>Repita um prompt num agente sem estar por perto: teste em loop, status de deploy, vigília de log.</p>
+          </div>
+        </li>
+        <li style="--cor: var(--rosa)">
+          <p class="sintaxe">~/.orquestra/</p>
+          <div>
+            <h3>Workspaces</h3>
+            <p>Um canvas por projeto. Nós, cabos, notas, agendamentos e viewport salvos sozinhos a cada 1,2 s e restaurados inteiros na volta.</p>
+          </div>
+        </li>
+      </ul>
     </section>
 
-    <section id="como">
-      <p class="sec-label">— a partitura</p>
-      <h2>Três movimentos e a orquestra toca.</h2>
-      <div class="steps">
-        <div class="step">
-          <h3>1. Abra a pasta do projeto</h3>
-          <p>Aponte o orquestra pro repositório onde o trabalho vai acontecer.</p>
-        </div>
-        <div class="step">
-          <h3>2. Some os músicos</h3>
-          <p><kbd>+ claude</kbd> <kbd>+ shell</kbd> <kbd>+ contexto</kbd> — cada botão põe um nó novo no palco.</p>
-        </div>
-        <div class="step">
-          <h3>3. Conecte e reja</h3>
-          <p>Arestas levam a saída de um nó pro outro. Você acompanha tudo e intervém em qualquer terminal, a qualquer momento.</p>
-        </div>
-      </div>
+    <section id="partitura">
+      <p class="rotulo">— partitura</p>
+      <h2>Da pasta vazia ao primeiro cabo aceso.</h2>
+      <ol class="ensaio">
+        <li>
+          <span class="marca-ensaio" aria-hidden="true">1</span>
+          <div>
+            <h3>Aponte pra pasta</h3>
+            <p>O workspace é o repositório onde o trabalho vai acontecer. Uma pasta, um canvas.</p>
+          </div>
+        </li>
+        <li>
+          <span class="marca-ensaio" aria-hidden="true">2</span>
+          <div>
+            <h3>Chame os músicos</h3>
+            <p>Clique direito no canvas ou <kbd>Ctrl+K</kbd>: <kbd>+ claude</kbd> <kbd>+ shell</kbd> <kbd>+ contexto</kbd> — o nó nasce onde está o cursor.</p>
+          </div>
+        </li>
+        <li>
+          <span class="marca-ensaio" aria-hidden="true">3</span>
+          <div>
+            <h3>Ligue e reja</h3>
+            <p>Arraste um cabo entre dois nós. Daí em diante eles se falam por endereço, e você digita direto em qualquer terminal quando quiser assumir.</p>
+          </div>
+        </li>
+      </ol>
     </section>
 
-    <section id="download">
-      <p class="sec-label">— estreia</p>
-      <h2>Baixe e monte sua orquestra.</h2>
-      <div class="dl-box">
-        <p class="platforms">
-          <b>Linux</b> .deb / .rpm / .AppImage &nbsp;·&nbsp;
-          <b>Windows</b> .exe / .msi &nbsp;·&nbsp;
+    <section id="estreia">
+      <p class="rotulo">— estreia</p>
+      <h2>Baixe e monte a sua.</h2>
+      <div class="estreia-caixa">
+        <p class="plataformas">
+          <b>Linux</b> .deb / .rpm / .AppImage<br />
+          <b>Windows</b> .exe / .msi<br />
           <b>macOS</b> .dmg (Intel e Apple Silicon)
         </p>
-        <a class="btn btn-brass" href="https://github.com/Caiollaz/orquestra/releases">Ir pros downloads</a>
+        <a class="btn btn-tutti" href="https://github.com/Caiollaz/orquestra/releases/latest">Ir pros downloads</a>
       </div>
     </section>
 
     <footer>
-      <span>or<em style="color: var(--brass);">q</em>uestra — código aberto, feito com Tauri.</span>
+      <span><em>orquestra</em> — código aberto, Tauri 2 + Rust.</span>
       <span><a href="https://github.com/Caiollaz/orquestra">github.com/Caiollaz/orquestra</a></span>
     </footer>
   </div>
-
-  <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/ScrollTrigger.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/MotionPathPlugin.min.js"></script>
-  <script>
-    const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const typedEl = document.getElementById("typed");
-    const lines = ["Escrevendo src/export.ts…", "Rodando os testes…", "Pronto. Encaminhando pro revisor ⇢"];
-
-    // digitação no nó central; devolve promessa que resolve quando a 1ª frase termina
-    function startTyping() {
-      let li = 0, ci = 0, firstDone;
-      const done = new Promise((r) => (firstDone = r));
-      (function tick() {
-        if (ci <= lines[li].length) {
-          typedEl.textContent = lines[li].slice(0, ci++);
-          setTimeout(tick, 45);
-        } else {
-          if (li === 0) firstDone();
-          setTimeout(() => { li = (li + 1) % lines.length; ci = 0; tick(); }, 2200);
-        }
-      })();
-      return done;
-    }
-
-    // sem GSAP ou movimento reduzido: conteúdo estático, última frase pronta
-    if (reduce || !window.gsap) {
-      typedEl.textContent = lines[lines.length - 1];
-    } else {
-      const { gsap } = window;
-      gsap.registerPlugin(ScrollTrigger, MotionPathPlugin);
-      // signature easing (Premium) + paleta de durações
-      const EASE = "power3.out", QUICK = 0.3, STD = 0.5, SLOW = 0.8;
-
-      gsap.set([".eyebrow", "h1", ".sub", ".cta-row .btn", ".cta-note"], { opacity: 0, y: 24 });
-      gsap.set(".stage", { opacity: 0, y: 40 });
-      gsap.set(".stage .node", { opacity: 0, y: 16, scale: 0.96, transformOrigin: "50% 50%" });
-      gsap.set(".edges", { opacity: 0 });
-
-      // abertura do herói: entra o texto, depois o palco, depois os músicos (stagger < 500ms)
-      const intro = gsap.timeline({ defaults: { ease: EASE } });
-      intro
-        .to(".eyebrow", { opacity: 1, y: 0, duration: QUICK })
-        .to("h1", { opacity: 1, y: 0, duration: SLOW }, "-=0.1")
-        .to(".sub", { opacity: 1, y: 0, duration: STD }, "-=0.45")
-        .to(".cta-row .btn", { opacity: 1, y: 0, duration: STD, stagger: 0.08 }, "-=0.3")
-        .to(".cta-note", { opacity: 1, y: 0, duration: QUICK }, "-=0.3")
-        .to(".stage", { opacity: 1, y: 0, duration: SLOW }, "-=0.2")
-        .to(".stage .node", { opacity: 1, y: 0, scale: 1, duration: STD, stagger: 0.12 }, "-=0.4")
-        .to(".edges", { opacity: 1, duration: STD }, "-=0.2")
-        .add(() => { startTyping(); runWire(); });   // narrativa começa quando o palco está montado
-
-      // camada ambient: brilho respirando (sine, loop suave)
-      gsap.to(".hero-glow", { opacity: 0.55, scale: 1.08, duration: 4, ease: "sine.inOut", yoyo: true, repeat: -1, transformOrigin: "50% 50%" });
-
-      // micro-história: mensagem viaja o cabo implementador → revisor, em loop
-      function runWire() {
-        gsap.timeline({ repeat: -1, repeatDelay: 1.6 })
-          .fromTo(".pulse", { opacity: 0 }, { opacity: 1, duration: 0.2 })
-          .to(".pulse", { duration: 1, ease: "power1.inOut", motionPath: { path: "#wire", align: "#wire", alignOrigin: [0.5, 0.5] } }, "<")
-          .to(".pulse", { opacity: 0, duration: 0.25 });
-      }
-
-      // revelação no scroll (uma vez), cards e passos em lote com stagger
-      gsap.utils.toArray("section").forEach((sec) => {
-        gsap.from(sec.querySelectorAll(".sec-label, h2"), {
-          opacity: 0, y: 20, duration: STD, ease: EASE, stagger: 0.1,
-          scrollTrigger: { trigger: sec, start: "top 78%", once: true },
-        });
-      });
-      ScrollTrigger.batch(".naipe, .step", {
-        start: "top 85%", once: true,
-        onEnter: (els) => gsap.from(els, { opacity: 0, y: 28, duration: STD, ease: EASE, stagger: 0.1, overwrite: true }),
-      });
-      gsap.from(".dl-box", {
-        opacity: 0, y: 28, duration: STD, ease: EASE,
-        scrollTrigger: { trigger: ".dl-box", start: "top 85%", once: true },
-      });
-
-      // posições dependem da fonte carregada: recalcula os triggers
-      document.fonts.ready.then(() => ScrollTrigger.refresh());
-    }
-  </script>
 </body>
 </html>
