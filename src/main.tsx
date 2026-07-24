@@ -4,6 +4,8 @@ import "@fontsource/jetbrains-mono/400.css";
 import "@fontsource/jetbrains-mono/400-italic.css";
 import "@fontsource/jetbrains-mono/500.css";
 import "@fontsource/jetbrains-mono/600.css";
+// só o itálico: Garamond entra como anotação de partitura, nunca como texto corrido
+import "@fontsource-variable/eb-garamond/wght-italic.css";
 import App from "./App";
 
 // mostra o erro em vez de tela branca se algo estourar no render

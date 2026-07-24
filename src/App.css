@@ -1,8 +1,16 @@
 /* ============================================================
    orquestra — fosso de orquestra à noite.
-   Fundo quente (palco apagado), latão como acento, tudo em
-   IBM Plex Mono (painel de instrumento). Cada agente carrega a
-   cor do seu naipe via --section (setada inline no nó).
+   Fundo quente (palco apagado), latão como acento. Cada agente
+   carrega a cor do seu naipe via --section (setada inline no nó).
+
+   Duas vozes tipográficas, com papéis fixos:
+   - --mono  : dado, endereço, terminal. Rótulo de nó é endereço de
+               rota (⇢NOME:), então é mono por semântica, não por
+               estética — nunca trocar por serifa.
+   - --annot : anotação de partitura (Garamond itálico, minúsculo).
+               Só onde o app "fala": título de diálogo, estado vazio,
+               placeholder, marcação de estado. Nunca texto corrido,
+               nunca manchete.
    ============================================================ */
 
 :root {
@@ -16,10 +24,17 @@
   --muted: #9c9186;
   --brass: #c69a55;
   --brass-dim: #8a744f;
-  --wire-active: #4a9eff; /* cabo aceso: dado fluindo entre nós */
+  /* cabo em repouso é latão frio, quase escuro: quanto mais quieto o repouso,
+     mais o momento de brasa aparece. Sem azul de LED — a paleta é toda quente
+     e esse é o evento mais importante do app. */
+  --wire: #6b5636;
+  --wire-active: #ffd7a3;
   --exited: #cf6a55;
+  --score: #d9c483;  /* partitura anotada (nó de nota) */
+  --portal: #7d8fa8; /* vidro do portal */
   --radius: 8px;
   --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --annot: "EB Garamond Variable", ui-serif, Georgia, serif;
 }
 
 * { box-sizing: border-box; }
@@ -37,7 +52,18 @@ body {
 }
 
 .app { display: flex; flex-direction: row; height: 100vh; overflow: hidden; }
-.brand-q { color: var(--brass); font-style: italic; }
+/* a marca é mono; só o q é Garamond itálico. Uma letra trocada no meio da
+   palavra — o mesmo gesto de uma anotação a lápis numa parte impressa. */
+.brand-q {
+  color: var(--brass); font-family: var(--annot); font-style: italic;
+  font-weight: 500; font-size: 1.12em; line-height: 0;
+}
+
+/* foco de teclado: piso de qualidade, vale pra tudo que recebe foco */
+button:focus-visible, input:focus-visible, textarea:focus-visible,
+select:focus-visible, [tabindex]:focus-visible {
+  outline: 1px solid var(--brass); outline-offset: 1px;
+}
 
 /* ---- sidebar (estúdios / workspaces) ------------------------- */
 
@@ -59,8 +85,9 @@ body {
   display: flex; align-items: center; justify-content: space-between;
   padding: 2px 6px 8px;
 }
+/* marca de ensaio (papel utilitário): caps miúdo, tracking largo */
 .sb-title {
-  font: 600 11px var(--mono); letter-spacing: 0.16em; text-transform: uppercase;
+  font: 600 10px var(--mono); letter-spacing: 0.18em; text-transform: uppercase;
   color: var(--muted); user-select: none;
 }
 .sb-toggle {
@@ -112,7 +139,7 @@ body {
   background: rgba(24, 21, 19, 0.82);
   border: 1px solid var(--border);
   border-radius: calc(14px * var(--s));
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
   backdrop-filter: blur(14px);
   animation: island-in 0.22s ease-out;
 }
@@ -192,10 +219,11 @@ body {
 }
 .react-flow__controls-button:hover { background: var(--panel-2); fill: var(--text); }
 
-/* arestas = cabos curvos tracejados entre estantes.
-   Em repouso: latão apagado, traço calmo. Aceso (dado fluindo): azul + marcha. */
+/* arestas = cabos curvos tracejados entre estantes. Em repouso, latão
+   apagado. Com dado passando, o latão fica incandescente e o traço marcha:
+   é o único momento em que o app brilha, e é o momento que importa. */
 .react-flow__edge-path {
-  stroke: var(--brass-dim);
+  stroke: var(--wire);
   stroke-width: 2;
   stroke-dasharray: 6 5;
   stroke-linecap: round;
@@ -206,6 +234,7 @@ body {
 .react-flow__edge.animated .react-flow__edge-path {
   stroke: var(--wire-active);
   stroke-width: 2.5;
+  filter: drop-shadow(0 0 4px rgba(255, 215, 163, 0.5));
   animation: dashdraw 0.55s linear infinite;
 }
 .react-flow__connection-path {
@@ -227,11 +256,14 @@ body {
 
 /* ---- nó de agente (estante do músico) ------------------------ */
 
+/* espinha do naipe na lombada esquerda: com o canvas afastado o rótulo
+   some, a cor não. É o que diz de longe quem é quem. */
 .agent-node {
   width: 100%; height: 100%;
   display: flex; flex-direction: column;
   background: var(--panel);
   border: 1px solid var(--border);
+  border-left: 3px solid var(--section, var(--brass));
   border-radius: var(--radius);
   overflow: hidden;
   box-shadow: 0 10px 32px rgba(0, 0, 0, 0.45);
@@ -266,7 +298,9 @@ body {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .agent-node.is-exited .agent-label { color: var(--exited); }
-.agent-exited-tag { font: italic 11px var(--mono); color: var(--exited); margin-left: 4px; }
+.agent-node.is-exited { border-left-color: var(--exited); }
+/* "saiu" é marcação de estado, não dado: entra na voz de anotação (tacet) */
+.agent-exited-tag { font: italic 400 13px/1 var(--annot); color: var(--exited); margin-left: 5px; }
 
 .agent-actions { display: inline-flex; gap: 2px; }
 .agent-btn {
@@ -290,12 +324,13 @@ body {
   display: flex; flex-direction: column;
   background: #201b12;
   border: 1px solid #453a20;
+  border-left: 3px solid var(--score);
   border-radius: var(--radius);
   overflow: hidden;
   box-shadow: 0 10px 32px rgba(0, 0, 0, 0.45);
   animation: node-in 0.18s ease-out;
 }
-.react-flow__node.selected .note-node { border-color: #d9c483; }
+.react-flow__node.selected .note-node { border-color: var(--score); }
 
 .note-head {
   display: flex; align-items: center; justify-content: space-between;
@@ -304,12 +339,14 @@ body {
   border-bottom: 1px solid #3a3120;
   cursor: grab; user-select: none;
 }
+/* a nota É uma partitura anotada: rótulo em Garamond itálico, como um
+   "dolce" escrito a lápis na margem da parte. */
 .note-label {
-  font: italic 600 12px var(--mono);
-  color: #d9c483;
-  letter-spacing: 0.04em;
+  font: italic 500 15px/1 var(--annot);
+  color: var(--score);
+  letter-spacing: 0.01em;
 }
-.note-node .react-flow__handle { background: #d9c483; }
+.note-node .react-flow__handle { background: var(--score); }
 
 .note-area {
   flex: 1; min-height: 0; resize: none;
@@ -318,7 +355,8 @@ body {
   padding: 10px 12px;
   font: 13px/1.55 var(--mono);
 }
-.note-area::placeholder { color: #8a7d5c; opacity: 0.8; }
+/* placeholder é convite, texto digitado é dado: serifa no convite, mono no dado */
+.note-area::placeholder { font: italic 400 14px var(--annot); color: #8a7d5c; opacity: 0.9; }
 
 .agent-role-tag {
   font: 11px var(--mono); color: var(--brass);
@@ -354,6 +392,7 @@ body {
   font: 14px var(--mono); padding: 14px 16px;
   border-bottom: 1px solid var(--border-soft);
 }
+.batuta-input::placeholder { font: italic 400 15px var(--annot); color: var(--muted); opacity: 0.85; }
 .batuta-list { max-height: 52vh; overflow: auto; padding: 6px; }
 .batuta-item {
   display: flex; align-items: center; gap: 8px; width: 100%;
@@ -412,6 +451,7 @@ body {
   width: 100%; height: 100%;
   display: flex; flex-direction: column;
   background: var(--panel); border: 1px solid var(--border);
+  border-left: 3px solid var(--portal);
   border-radius: var(--radius);
   overflow: hidden; box-shadow: 0 10px 32px rgba(0, 0, 0, 0.45);
   animation: node-in 0.18s ease-out;
@@ -422,8 +462,9 @@ body {
   border-bottom: 1px solid var(--border-soft); cursor: grab;
 }
 .portal-label {
-  font: 600 11px var(--mono); color: #7d8fa8;
-  letter-spacing: 0.04em; padding: 0 4px; flex: none; user-select: none;
+  font: 600 10px var(--mono); color: var(--portal);
+  letter-spacing: 0.18em; text-transform: uppercase;
+  padding: 0 5px; flex: none; user-select: none;
 }
 .portal-url {
   flex: 1; min-width: 0; background: var(--bg); color: var(--text);
@@ -447,9 +488,13 @@ body {
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
 }
 .modal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+/* título do modal na voz de anotação, igual ao do diálogo */
+.modal-head b { font: italic 500 19px/1.1 var(--annot); font-weight: 500; letter-spacing: 0.01em; }
 .modal-err { color: var(--exited); font-size: 12px; margin-bottom: 8px; }
 .role-list { display: flex; flex-direction: column; gap: 6px; }
-.role-empty { color: var(--muted); font-size: 12px; padding: 8px 0; }
+/* tela vazia é convite, não bilhete de sistema */
+.role-empty, .portal-empty { font: italic 400 14px/1.5 var(--annot); color: var(--muted); }
+.role-empty { padding: 8px 2px; }
 .role-row {
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
   border: 1px solid var(--border-soft); border-radius: var(--radius); padding: 8px 10px;
@@ -483,10 +528,16 @@ body {
 /* ---- dialog (prompt/confirm custom) ----------------------------- */
 
 .dialog { width: 400px; }
-.dialog-title { font: 600 14px var(--mono); margin-bottom: 10px; }
+.dialog-title { font: italic 500 19px/1.1 var(--annot); letter-spacing: 0.01em; margin-bottom: 10px; }
+/* o corpo explica o que vai acontecer: mono, porque quase sempre cita rótulo,
+   caminho ou comando — serifa itálica em prosa longa cansa e mente sobre o tipo */
 .dialog-msg { color: var(--muted); font-size: 12px; line-height: 1.55; margin-bottom: 16px; }
 .dialog-field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 12px; }
-.dialog-field span { font-size: 11px; color: var(--muted); letter-spacing: 0.04em; }
+/* marca de ensaio: caps miúdo com tracking largo, mesma família da .sb-title */
+.dialog-field span {
+  font: 600 10px var(--mono); text-transform: uppercase;
+  letter-spacing: 0.18em; color: var(--muted);
+}
 .dialog-field input {
   background: var(--bg); color: var(--text);
   border: 1px solid var(--border); border-radius: var(--radius);
