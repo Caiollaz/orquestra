@@ -1,0 +1,66 @@
+# Gera os instaladores desktop (deb/rpm/AppImage, exe/msi, dmg) e publica
+# como release draft no GitHub. Dispara em tag v* ou manualmente.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    permissions:
+      contents: write # tauri-action cria a release e sobe os assets
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: ubuntu-22.04 # .deb, .rpm, .AppImage
+            args: ""
+          - platform: windows-latest # .exe (NSIS) e .msi
+            args: ""
+          - platform: macos-latest # .dmg (Apple Silicon)
+            args: "--target aarch64-apple-darwin"
+          - platform: macos-latest # .dmg (Intel)
+            args: "--target x86_64-apple-darwin"
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: dependências de sistema (Linux)
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
+            libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          # macos precisa dos dois targets pra cross-compilar Intel a partir do runner ARM
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - run: pnpm install --frozen-lockfile
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: v__VERSION__ # __VERSION__ vira a versão do tauri.conf.json
+          releaseName: "orquestra v__VERSION__"
+          releaseBody: "Instaladores nos assets abaixo."
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}
