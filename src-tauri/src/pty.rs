@@ -44,55 +44,120 @@ pub enum AgentCmd {
     Shell { program: Option<String> },
 }
 
-/// PATH do shell de login costuma ter dirs que o app GUI não herda (~/.local/bin etc).
+/// PATH do shell de login costuma ter dirs que o app GUI não herda.
 /// Aumenta o PATH atual com os locais comuns pra achar `claude` e afins.
 fn augmented_path() -> String {
     let mut parts: Vec<std::path::PathBuf> = std::env::var_os("PATH")
         .map(|p| std::env::split_paths(&p).collect())
         .unwrap_or_default();
-    if let Some(home) = std::env::var_os("HOME") {
-        let home = std::path::PathBuf::from(home);
-        for suf in [".local/bin", ".cargo/bin", ".bun/bin", ".deno/bin", "bin"] {
-            parts.push(home.join(suf));
+
+    #[cfg(not(windows))]
+    {
+        if let Some(home) = std::env::var_os("HOME") {
+            let home = std::path::PathBuf::from(home);
+            for suf in [".local/bin", ".cargo/bin", ".bun/bin", ".deno/bin", "bin"] {
+                parts.push(home.join(suf));
+            }
+        }
+        for d in ["/usr/local/bin", "/opt/homebrew/bin", "/usr/bin", "/bin"] {
+            parts.push(std::path::PathBuf::from(d));
         }
     }
-    for d in ["/usr/local/bin", "/opt/homebrew/bin", "/usr/bin", "/bin"] {
-        parts.push(std::path::PathBuf::from(d));
+    #[cfg(windows)]
+    {
+        // claude no Windows: instalador nativo (~\.local\bin\claude.exe) ou npm global (%APPDATA%\npm\claude.cmd)
+        if let Some(up) = std::env::var_os("USERPROFILE") {
+            let up = std::path::PathBuf::from(up);
+            parts.push(up.join(".local\\bin"));
+            parts.push(up.join(".bun\\bin"));
+        }
+        if let Some(appdata) = std::env::var_os("APPDATA") {
+            parts.push(std::path::PathBuf::from(appdata).join("npm"));
+        }
+        if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+            parts.push(std::path::PathBuf::from(local).join("Microsoft\\WindowsApps"));
+        }
     }
+
     let mut seen = std::collections::HashSet::new();
     parts.retain(|p| seen.insert(p.clone()));
     std::env::join_paths(parts).map(|p| p.to_string_lossy().into_owned()).unwrap_or_default()
 }
 
-/// Resolve `name` pra caminho absoluto varrendo `path` (:separado). Devolve `name` se não achar.
+/// Extensões executáveis a testar ao resolver um nome sem extensão.
+/// No Windows vem do PATHEXT (`claude` → `claude.exe`/`claude.cmd`); em Unix só o nome cru.
+#[cfg(windows)]
+fn executable_exts() -> Vec<String> {
+    let mut v = vec![String::new()]; // nome já pode trazer a extensão
+    let raw = std::env::var("PATHEXT").unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".into());
+    for e in raw.split(';').filter(|s| !s.is_empty()) {
+        v.push(e.to_string());
+    }
+    v
+}
+#[cfg(not(windows))]
+fn executable_exts() -> Vec<String> {
+    vec![String::new()]
+}
+
+/// Resolve `name` pra caminho absoluto varrendo o PATH. Devolve `name` se não achar.
 fn resolve_program(name: &str, path: &str) -> String {
-    if name.contains('/') {
+    // caminho já explícito (separador ou absoluto): usa direto
+    if name.contains('/') || name.contains('\\') || std::path::Path::new(name).is_absolute() {
         return name.to_string();
     }
+    let exts = executable_exts();
     for dir in std::env::split_paths(path) {
-        let cand = dir.join(name);
-        if cand.is_file() {
-            return cand.to_string_lossy().into_owned();
+        for ext in &exts {
+            let cand = dir.join(format!("{name}{ext}"));
+            if cand.is_file() {
+                return cand.to_string_lossy().into_owned();
+            }
         }
     }
     name.to_string()
 }
 
+/// Shell padrão do SO quando o usuário não escolhe um.
+#[cfg(windows)]
+fn default_shell() -> String {
+    std::env::var("ComSpec").unwrap_or_else(|_| "cmd.exe".into())
+}
+#[cfg(not(windows))]
+fn default_shell() -> String {
+    std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".into())
+}
+
+/// Monta o CommandBuilder. No Windows, shims `.cmd`/`.bat` (ex: npm) não são
+/// executáveis pro CreateProcess — precisam de `cmd.exe /c`.
+fn command_for(program: String, args: &[String]) -> CommandBuilder {
+    #[cfg(windows)]
+    {
+        let lower = program.to_ascii_lowercase();
+        if lower.ends_with(".cmd") || lower.ends_with(".bat") {
+            let mut b = CommandBuilder::new("cmd.exe");
+            b.arg("/c");
+            b.arg(&program);
+            for a in args {
+                b.arg(a);
+            }
+            return b;
+        }
+    }
+    let mut b = CommandBuilder::new(program);
+    for a in args {
+        b.arg(a);
+    }
+    b
+}
+
 fn build_command(cmd: &AgentCmd, cwd: &str) -> CommandBuilder {
     let path = augmented_path();
     let mut b = match cmd {
-        AgentCmd::Claude { extra_args } => {
-            let mut b = CommandBuilder::new(resolve_program("claude", &path));
-            for a in extra_args {
-                b.arg(a);
-            }
-            b
-        }
+        AgentCmd::Claude { extra_args } => command_for(resolve_program("claude", &path), extra_args),
         AgentCmd::Shell { program } => {
-            let sh = program.clone().unwrap_or_else(|| {
-                std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".into())
-            });
-            CommandBuilder::new(resolve_program(&sh, &path))
+            let sh = program.clone().unwrap_or_else(default_shell);
+            command_for(resolve_program(&sh, &path), &[])
         }
     };
     b.cwd(cwd);
