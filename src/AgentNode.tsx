@@ -11,6 +11,7 @@ export type AgentNodeData = {
   exited?: boolean; // setado pelo App quando o backend emite "agent-exited"
   onKill: (id: string) => void;
   onSend: (id: string) => void;
+  onIdle: (id: string) => void;
 };
 
 // Nó = frame + header arrastável + terminal. Handles ligam nós; `nodrag/nowheel`
@@ -37,7 +38,7 @@ function AgentNodeImpl({ id, data, selected }: NodeProps) {
         </span>
       </div>
       <div className="agent-term nodrag nowheel">
-        <XtermView agentId={id} cmd={d.cmd} cwd={d.cwd} />
+        <XtermView agentId={id} cmd={d.cmd} cwd={d.cwd} onIdle={d.onIdle} />
       </div>
     </div>
   );

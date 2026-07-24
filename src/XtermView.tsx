@@ -6,8 +6,11 @@ import "@xterm/xterm/css/xterm.css";
 import { spawnAgent, writeStdin, resizePty, killAgent, type AgentCmd } from "./lib/tauri";
 import { terminals } from "./shared";
 
+// ponytail: 1s sem output = agente ocioso; spinner do claude emite a cada ~100ms
+const IDLE_MS = 1000;
+
 // Terminal xterm ligado a um PTY no Rust. Instância vive fora do React (ref).
-export function XtermView({ agentId, cmd, cwd }: { agentId: string; cmd: AgentCmd; cwd: string }) {
+export function XtermView({ agentId, cmd, cwd, onIdle }: { agentId: string; cmd: AgentCmd; cwd: string; onIdle?: (id: string) => void }) {
   const boxRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -50,8 +53,16 @@ export function XtermView({ agentId, cmd, cwd }: { agentId: string; cmd: AgentCm
 
     terminals.set(agentId, term);
     term.onData((d) => void writeStdin(agentId, d));
+
+    // debounce de ociosidade: cada rajada de output reinicia o timer
+    let idleTimer: number | undefined;
+    const bump = () => {
+      clearTimeout(idleTimer);
+      idleTimer = window.setTimeout(() => onIdle?.(agentId), IDLE_MS);
+    };
+
     // erro de spawn (ex: binário não encontrado) aparece no terminal em vez de tela vazia
-    spawnAgent(agentId, cmd, cwd, term.cols, term.rows, (bytes) => term.write(bytes)).catch((e) =>
+    spawnAgent(agentId, cmd, cwd, term.cols, term.rows, (bytes) => { term.write(bytes); bump(); }).catch((e) =>
       term.write(`\r\n\x1b[31m[falha ao iniciar: ${e}]\x1b[0m\r\n`),
     );
 
@@ -64,6 +75,7 @@ export function XtermView({ agentId, cmd, cwd }: { agentId: string; cmd: AgentCm
     ro.observe(boxRef.current!);
 
     return () => {
+      clearTimeout(idleTimer);
       ro.disconnect();
       terminals.delete(agentId);
       void killAgent(agentId);
