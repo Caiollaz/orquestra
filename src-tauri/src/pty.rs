@@ -46,7 +46,7 @@ pub enum AgentCmd {
 
 /// PATH do shell de login costuma ter dirs que o app GUI não herda.
 /// Aumenta o PATH atual com os locais comuns pra achar `claude` e afins.
-fn augmented_path() -> String {
+pub(crate) fn augmented_path() -> String {
     let mut parts: Vec<std::path::PathBuf> = std::env::var_os("PATH")
         .map(|p| std::env::split_paths(&p).collect())
         .unwrap_or_default();
@@ -101,7 +101,7 @@ fn executable_exts() -> Vec<String> {
 }
 
 /// Resolve `name` pra caminho absoluto varrendo o PATH. Devolve `name` se não achar.
-fn resolve_program(name: &str, path: &str) -> String {
+pub(crate) fn resolve_program(name: &str, path: &str) -> String {
     // caminho já explícito (separador ou absoluto): usa direto
     if name.contains('/') || name.contains('\\') || std::path::Path::new(name).is_absolute() {
         return name.to_string();

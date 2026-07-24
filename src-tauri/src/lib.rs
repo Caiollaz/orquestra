@@ -1,3 +1,4 @@
+mod editor;
 mod git;
 mod pty;
 mod roles;
@@ -24,8 +25,10 @@ pub fn run() {
             workspace::list_workspaces,
             workspace::load_workspace,
             workspace::save_workspace,
+            workspace::delete_workspace,
             git::create_floor,
             git::remove_floor,
+            editor::open_editor,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

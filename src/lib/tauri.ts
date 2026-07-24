@@ -26,3 +26,36 @@ export const killAgent = (agentId: string) =>
   invoke<void>("kill_agent", { agentId });
 export const forwardOutput = (toAgent: string, text: string) =>
   invoke<void>("forward_output", { toAgent, text });
+
+// ── papéis (roles.rs) ───────────────────────────────────────────────
+export type Role = { file: string; name: string; agent: string; description: string; body: string };
+export const listRoles = (repoPath: string) => invoke<Role[]>("list_roles", { repoPath });
+export const saveRole = (repoPath: string, role: Role) => invoke<void>("save_role", { repoPath, role });
+export const deleteRole = (repoPath: string, file: string) => invoke<void>("delete_role", { repoPath, file });
+export const applyRole = (agentId: string, role: Role, vars: Record<string, string> = {}) =>
+  invoke<void>("apply_role", { agentId, role, vars });
+
+// ── floors / worktrees (git.rs) ─────────────────────────────────────
+export type Floor = { slug: string; branch: string; path: string };
+export const createFloor = (repoPath: string, slug: string) => invoke<Floor>("create_floor", { repoPath, slug });
+export const removeFloor = (repoPath: string, slug: string) => invoke<void>("remove_floor", { repoPath, slug });
+
+// ── workspaces (workspace.rs) ───────────────────────────────────────
+export type Viewport = { x: number; y: number; zoom: number };
+export type WsAgent = {
+  id: string; label: string; roleFile?: string | null; cmd: AgentCmd; cwd: string;
+  floorSlug?: string | null; x: number; y: number; w: number; h: number;
+};
+export type WorkspaceMeta = { id: string; name: string; repoPath: string };
+export type Workspace = {
+  id: string; name: string; repoPath: string; createdAt?: string;
+  viewport: Viewport; agents: WsAgent[]; floors: Floor[];
+};
+export const listWorkspaces = () => invoke<WorkspaceMeta[]>("list_workspaces");
+export const loadWorkspace = (id: string) => invoke<Workspace>("load_workspace", { id });
+export const saveWorkspace = (workspace: Workspace) => invoke<void>("save_workspace", { workspace });
+export const deleteWorkspace = (id: string) => invoke<void>("delete_workspace", { id });
+
+// ── editor externo (editor.rs) ──────────────────────────────────────
+export const openEditor = (path: string, editor?: string) =>
+  invoke<void>("open_editor", { path, editor: editor ?? null });

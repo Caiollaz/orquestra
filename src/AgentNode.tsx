@@ -9,9 +9,13 @@ export type AgentNodeData = {
   cwd: string;
   section: string; // cor do naipe (borda, lâmpada, handles) via --section
   exited?: boolean; // setado pelo App quando o backend emite "agent-exited"
+  roleName?: string; // papel aplicado (só rótulo visual)
+  scheduled?: boolean; // tem prompt agendado ativo
   onKill: (id: string) => void;
   onSend: (id: string) => void;
   onIdle: (id: string) => void;
+  onRole: (id: string) => void;
+  onSchedule: (id: string) => void;
 };
 
 // Nó = frame + header arrastável + terminal. Handles ligam nós; `nodrag/nowheel`
@@ -30,9 +34,12 @@ function AgentNodeImpl({ id, data, selected }: NodeProps) {
         <span className="agent-title">
           <span className="agent-lamp" />
           <span className="agent-label">{d.label}</span>
+          {d.roleName && <span className="agent-role-tag">{d.roleName}</span>}
           {d.exited && <span className="agent-exited-tag">saiu</span>}
         </span>
         <span className="agent-actions">
+          <button className="agent-btn nodrag" title="Atribuir papel" onClick={() => d.onRole(id)}>◎</button>
+          <button className={`agent-btn nodrag${d.scheduled ? " is-on" : ""}`} title="Agendar prompt" onClick={() => d.onSchedule(id)}>⏱</button>
           <button className="agent-btn nodrag" title="Enviar seleção pros conectados" onClick={() => d.onSend(id)}>⇢</button>
           <button className="agent-btn nodrag" title="Encerrar agente" onClick={() => d.onKill(id)}>×</button>
         </span>

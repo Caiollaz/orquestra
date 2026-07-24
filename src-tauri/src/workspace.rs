@@ -96,6 +96,16 @@ pub fn load_workspace(id: String) -> Result<Workspace, String> {
 }
 
 #[tauri::command]
+pub fn delete_workspace(id: String) -> Result<(), String> {
+    let p = ws_dir().join(format!("{id}.json"));
+    if p.exists() {
+        fs::remove_file(&p).map_err(|e| e.to_string())?;
+    }
+    let idx: Vec<WorkspaceMeta> = read_index().into_iter().filter(|m| m.id != id).collect();
+    write_index(&idx)
+}
+
+#[tauri::command]
 pub fn save_workspace(workspace: Workspace) -> Result<(), String> {
     fs::create_dir_all(ws_dir()).map_err(|e| e.to_string())?;
     let p = ws_dir().join(format!("{}.json", workspace.id));
