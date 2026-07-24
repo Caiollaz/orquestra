@@ -15,6 +15,7 @@
   --muted: #9c9186;
   --brass: #c69a55;
   --brass-dim: #8a744f;
+  --wire-active: #4a9eff; /* cabo aceso: dado fluindo entre nós */
   --exited: #cf6a55;
   --radius: 8px;
   --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -97,11 +98,29 @@ body {
 }
 .react-flow__controls-button:hover { background: var(--panel-2); fill: var(--text); }
 
-/* arestas = cabos entre estantes */
-.react-flow__edge-path { stroke: var(--brass-dim); stroke-width: 1.5; }
+/* arestas = cabos curvos tracejados entre estantes.
+   Em repouso: latão apagado, traço calmo. Aceso (dado fluindo): azul + marcha. */
+.react-flow__edge-path {
+  stroke: var(--brass-dim);
+  stroke-width: 2;
+  stroke-dasharray: 6 5;
+  stroke-linecap: round;
+  fill: none;
+}
 .react-flow__edge.selected .react-flow__edge-path,
 .react-flow__edge:focus .react-flow__edge-path { stroke: var(--brass); }
-.react-flow__connection-path { stroke: var(--brass); stroke-width: 1.5; }
+.react-flow__edge.animated .react-flow__edge-path {
+  stroke: var(--wire-active);
+  stroke-width: 2.5;
+  animation: dashdraw 0.55s linear infinite;
+}
+.react-flow__connection-path {
+  stroke: var(--brass); stroke-width: 2;
+  stroke-dasharray: 6 5; stroke-linecap: round;
+}
+@media (prefers-reduced-motion: reduce) {
+  .react-flow__edge.animated .react-flow__edge-path { animation: none; }
+}
 
 .react-flow__handle {
   width: 9px; height: 9px;

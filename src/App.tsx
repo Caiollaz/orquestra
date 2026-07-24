@@ -78,7 +78,21 @@ export default function App() {
 
   const onNodesChange = useCallback((c: NodeChange[]) => setNodes((ns) => applyNodeChanges(c, ns)), []);
   const onEdgesChange = useCallback((c: EdgeChange[]) => setEdges((es) => applyEdgeChanges(c, es)), []);
-  const onConnect = useCallback((c: Connection) => setEdges((es) => addEdge({ ...c, animated: true }, es)), []);
+  const onConnect = useCallback((c: Connection) => setEdges((es) => addEdge(c, es)), []);
+
+  // acende o cabo (azul + marcha) enquanto o dado flui origem→alvo, apaga após 1.2s
+  const flashTimers = useRef(new Map<string, number>());
+  const flashEdge = useCallback((source: string, target: string) => {
+    const match = (e: Edge) => e.source === source && e.target === target;
+    setEdges((es) => es.map((e) => (match(e) ? { ...e, animated: true } : e)));
+    const key = `${source}->${target}`;
+    const prev = flashTimers.current.get(key);
+    if (prev) clearTimeout(prev);
+    flashTimers.current.set(key, window.setTimeout(() => {
+      setEdges((es) => es.map((e) => (match(e) ? { ...e, animated: false } : e)));
+      flashTimers.current.delete(key);
+    }, 1200));
+  }, []);
 
   const killNode = useCallback((id: string) => {
     setNodes((ns) => ns.filter((n) => n.id !== id)); // desmontar XtermView chama kill_agent
@@ -134,9 +148,9 @@ export default function App() {
           ? targets
           : targets.filter((t) => (nodesRef.current.find((n) => n.id === t)?.data as AgentNodeData | undefined)?.label === dest);
       // "(de X)" sem marcador ⇢: o eco no destino não dispara reenvio em cascata
-      wanted.forEach((t) => void forwardOutput(t, `(de ${d.label}) ${msg}`).catch(() => {}));
+      wanted.forEach((t) => { flashEdge(id, t); void forwardOutput(t, `(de ${d.label}) ${msg}`).catch(() => {}); });
     }
-  }, [readNewLines]);
+  }, [readNewLines, flashEdge]);
 
   // envia o texto da origem (seleção do terminal, ou texto da nota) pros alvos conectados
   const sendFrom = useCallback((sourceId: string) => {
@@ -145,8 +159,8 @@ export default function App() {
     const term = terminals.get(sourceId);
     const text = (term?.getSelection() || noteText.get(sourceId) || "").trim();
     if (!text) return; // nada selecionado/escrito
-    targets.forEach((t) => void forwardOutput(t, text).catch(() => {}));
-  }, []);
+    targets.forEach((t) => { flashEdge(sourceId, t); void forwardOutput(t, text).catch(() => {}); });
+  }, [flashEdge]);
 
   const addAgent = (cmd: AgentCmd, label: string) => {
     const id = `agent-${++seq}`;
