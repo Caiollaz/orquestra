@@ -10,7 +10,8 @@ Design rationale, milestones (M0–M6), and the data model live in `PLAN.md`. Re
 
 ## Commands
 
-Uses **pnpm**. No git repo (`git init` not run yet).
+Uses **pnpm**. In a GUI-less shell `pnpm` may not be on PATH — it lives in
+`~/.nvm/versions/node/<ver>/bin`.
 
 - `pnpm tauri dev` — run the app (Tauri spawns `pnpm dev` / Vite on fixed port 1420).
 - `pnpm build` — `tsc && vite build` (frontend only; type-checks then bundles to `dist/`).
@@ -22,9 +23,25 @@ Uses **pnpm**. No git repo (`git init` not run yet).
 
 Rust backend (`src-tauri/src/`) exposes Tauri commands; React 19 + TS frontend (`src/`) drives them. All commands are registered in `lib.rs`; the JS wrappers live in `src/lib/tauri.ts`.
 
-### Backend is ahead of the frontend
+### Roles vs contexts (don't conflate them)
 
-**Key gotcha:** the Rust side implements *all* milestones (M1–M6) — PTY, roles, workspaces, floors — each with tests. But `App.tsx` only wires **M1/M2**: spawn shell/claude nodes, note nodes, and `forward_output`. `roles`/`workspace`/`git` commands exist and pass tests but have **no UI yet** (PLAN.md marks M3–M6 ⬜). When adding those features, the backend command + its wrapper likely already exist — wire the UI, don't reimplement.
+Two separate primitives, both markdown seeded into an agent's stdin:
+
+- **Role** (`roles.rs`, `<repo>/.orquestra/roles/*.md`) — *who the agent is*. One
+  per agent. Frontmatter `name/agent/description`. Applied via `apply_role`.
+- **Context** (`contexts.rs`, `<repo>/.orquestra/contexts/*.md`) — *what it needs
+  to know* (business rules, architecture, contracts). Several per agent,
+  stackable. Frontmatter optional: without it the first `# heading` becomes the
+  name. Applied via `apply_contexts`, which composes **all blocks into one
+  submission** — two bracketed-pastes back to back trample each other in
+  claude's prompt.
+
+A workspace has **default contexts** (`canvas.defaultContexts`): every new claude
+agent gets them automatically on its *second* idle (the first carries the
+`⇢NOME:` protocol prompt). That ordering is the whole point — don't merge them.
+
+`.orquestra/roles/` and `.orquestra/contexts/` are **versioned**; everything else
+under `.orquestra/` (worktrees, `board.md`) is ignored.
 
 ### PTY lifecycle (`pty.rs` + `XtermView.tsx`)
 
@@ -39,14 +56,18 @@ Rust backend (`src-tauri/src/`) exposes Tauri commands; React 19 + TS frontend (
 
 ### Inter-agent communication (`forward_output`)
 
-`forward_output_to` writes text to a target agent's stdin wrapped in **bracketed-paste** (`\x1b[200~…\x1b[201~\r`) so it lands as a single submission. Both node→node forwarding and `apply_role` (seed a role prompt) route through this one function.
+`forward_output_to` writes text to a target agent's stdin wrapped in **bracketed-paste** (`\x1b[200~…\x1b[201~\r`) so it lands as a single submission. Node→node forwarding, `apply_role` and `apply_contexts` all route through this one function.
+
+Text is passed through `bracketed_safe` first, which strips control characters. A `\x1b[201~` inside the payload would close the paste early and the remainder would land as **raw keystrokes** in the target terminal — command injection from another agent's output, a note, or a context file. Keep that filter on any new path into `forward_output_to`.
+
+Labels are **routing addresses** (`⇢NOME: msg`), so renaming a node has to tell the node itself and every claude pointing at it (`renameNode` in App.tsx), otherwise messages go to a name nobody answers to.
 
 ### Persistence & filesystem layout
 
-- Workspaces: `~/.orquestra/` — `index.json` (list) + `workspaces/<id>.json` (full state incl. layout). `workspace.rs`. Override the base dir with the `ORQUESTRA_HOME` env var (tests use it).
+- Workspaces: `~/.orquestra/` — `index.json` (list) + `workspaces/<id>.json` (full state incl. layout). `workspace.rs`. Override the base dir with the `ORQUESTRA_HOME` env var (tests use it — and it's process-global, so tests that set it share a `Mutex`). Writes are atomic (tmp + rename): autosave fires every 1.2s and a truncated file would cost the user the whole canvas.
 - Roles: `<repo>/.orquestra/roles/*.md` — markdown with `name`/`agent`/`description` frontmatter + body with `{{var}}` placeholders. `roles.rs`.
-- Floors: git **worktrees** at `<repo>/.orquestra/worktrees/<slug>` on branch `orquestra/<slug>`. Git is invoked as a subprocess (`git.rs`), not a library.
+- Floors: git **worktrees** at `<repo>/.orquestra/worktrees/<slug>` on branch `orquestra/<slug>`. Git is invoked as a subprocess (`git.rs`), not a library. `remove_floor` refuses to delete a floor with uncommitted work unless `force` is passed explicitly.
 
 ### Tested pure functions
 
-`slugify`, `render_template`, `parse_role` (`roles.rs`); `branch_name`, `worktree_path` (`git.rs`); workspace roundtrip (`workspace.rs`). Keep new pure logic testable in the same style — the ported logic (from the prior `agentdesk` project) is validated here, not just in the app.
+`slugify`, `render_template`, `parse_role`, `split_frontmatter`, `file_ok` (`roles.rs`); `parse_context`, `compose_contexts` (`contexts.rs`); `branch_name`, `worktree_path`, `pending_changes` (`git.rs`); `bracketed_safe` (`pty.rs`); workspace roundtrip + atomic write (`workspace.rs`). 21 tests today. Keep new pure logic testable in the same style — the ported logic (from the prior `agentdesk` project) is validated here, not just in the app.

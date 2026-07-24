@@ -12,8 +12,16 @@ use tauri::ipc::Channel;
 use tauri::{AppHandle, Emitter, State};
 
 /// Um agente vivo. `writer`/`master` ficam pra stdin e resize; `child` pra matar.
+///
+/// `writer` é `Arc<Mutex<_>>` de propósito: escrever num PTY cujo filho não está
+/// drenando stdin **bloqueia** (buffer cheio). Se esse write acontecesse com o
+/// mapa de agentes travado, um único terminal parado congelava o app inteiro —
+/// ninguém mais digitava, e nem o `kill_all` do fechamento passava (órfãos,
+/// contra a regra 2). Agora clonamos o Arc, soltamos o mapa e só então escrevemos.
+type Writer = Arc<Mutex<Box<dyn Write + Send>>>;
+
 struct Agent {
-    writer: Box<dyn Write + Send>,
+    writer: Writer,
     master: Box<dyn MasterPty + Send>,
     child: Box<dyn portable_pty::Child + Send + Sync>,
     alive: Arc<AtomicBool>,
@@ -31,6 +39,14 @@ impl PtyState {
     /// caso um write pela metade), então recuperamos o guard e seguimos.
     fn agents(&self) -> std::sync::MutexGuard<'_, HashMap<String, Agent>> {
         self.agents.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Pega o writer do agente e **solta** o mapa antes de escrever nele.
+    fn writer_of(&self, agent_id: &str) -> Result<Writer, String> {
+        self.agents()
+            .get(agent_id)
+            .map(|a| a.writer.clone())
+            .ok_or(format!("agente {agent_id} não encontrado"))
     }
 
     /// Mata todos os agentes (chamado no fechamento do app pra não deixar órfão).
@@ -298,22 +314,27 @@ pub fn spawn_agent(
 
     // id repetido (remount do XtermView, reload da janela) sobrescrevia a
     // entrada e deixava o processo antigo órfão — mata o anterior antes.
-    if let Some(mut old) = state
-        .agents()
-        .insert(agent_id, Agent { writer, master: pair.master, child, alive })
-    {
+    if let Some(mut old) = state.agents().insert(
+        agent_id,
+        Agent { writer: Arc::new(Mutex::new(writer)), master: pair.master, child, alive },
+    ) {
         old.alive.store(false, Ordering::SeqCst);
         let _ = old.child.kill();
     }
     Ok(())
 }
 
+/// Escreve bytes no stdin do agente sem manter o mapa travado (ver `Writer`).
+fn write_to(state: &PtyState, agent_id: &str, bytes: &[u8]) -> Result<(), String> {
+    let writer = state.writer_of(agent_id)?;
+    let mut w = writer.lock().unwrap_or_else(|e| e.into_inner());
+    w.write_all(bytes).map_err(|e| e.to_string())?;
+    w.flush().map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub fn write_stdin(state: State<PtyState>, agent_id: String, data: String) -> Result<(), String> {
-    let mut map = state.agents();
-    let a = map.get_mut(&agent_id).ok_or(format!("agente {agent_id} não encontrado"))?;
-    a.writer.write_all(data.as_bytes()).map_err(|e| e.to_string())?;
-    a.writer.flush().map_err(|e| e.to_string())
+    write_to(&state, &agent_id, data.as_bytes())
 }
 
 #[tauri::command]
@@ -334,18 +355,6 @@ pub fn kill_agent(state: State<PtyState>, agent_id: String) -> Result<(), String
     Ok(())
 }
 
-/// Ids dos agentes vivos. O front usa pra saber se um nó restaurado já tem PTY
-/// (e pra não semear contexto duas vezes no mesmo processo).
-#[tauri::command]
-pub fn live_agents(state: State<PtyState>) -> Vec<String> {
-    state
-        .agents()
-        .iter()
-        .filter(|(_, a)| a.alive.load(Ordering::SeqCst))
-        .map(|(id, _)| id.clone())
-        .collect()
-}
-
 /// Tira caracteres de controle do texto colado. Um `\x1b[201~` no meio do
 /// conteúdo encerraria o bracketed-paste antes do fim e o resto entraria como
 /// digitação crua no terminal do destino — injeção de comando a partir de
@@ -355,14 +364,24 @@ pub(crate) fn bracketed_safe(text: &str) -> String {
     text.chars().filter(|c| !c.is_control() || *c == '\n' || *c == '\t').collect()
 }
 
+/// Teto do bloco colado. O buffer do PTY é pequeno (uns 8-16 KB) e o write
+/// bloqueia quando o filho não drena stdin; acima disso, erro claro em vez de
+/// terminal pendurado. Um contexto grande deve ser lido do disco pelo agente.
+pub(crate) const MAX_PASTE: usize = 16 * 1024;
+
 /// Escreve texto no stdin do agente como bracketed-paste (bloco único, uma submissão).
 /// Usado pelo forward_output (comunicação entre agentes) e pelo apply_role (semear papel).
 pub fn forward_output_to(state: &PtyState, to_agent: &str, text: &str) -> Result<(), String> {
-    let mut map = state.agents();
-    let a = map.get_mut(to_agent).ok_or(format!("agente destino {to_agent} não encontrado"))?;
-    let framed = format!("\x1b[200~{}\x1b[201~\r", bracketed_safe(text));
-    a.writer.write_all(framed.as_bytes()).map_err(|e| e.to_string())?;
-    a.writer.flush().map_err(|e| e.to_string())
+    let safe = bracketed_safe(text);
+    if safe.len() > MAX_PASTE {
+        return Err(format!(
+            "texto grande demais pra colar ({} KB, limite {} KB): o PTY do destino bloqueia quando o filho não drena stdin",
+            safe.len() / 1024,
+            MAX_PASTE / 1024
+        ));
+    }
+    let framed = format!("\x1b[200~{safe}\x1b[201~\r");
+    write_to(state, to_agent, framed.as_bytes())
 }
 
 /// Encaminha texto pro stdin de outro agente (comunicação entre agentes).
@@ -395,6 +414,18 @@ mod tests {
         assert_eq!(safe, "ok[201~rm -rf /");
         // formatação legítima do bloco continua passando
         assert_eq!(bracketed_safe("a\nb\tc"), "a\nb\tc");
+    }
+
+    #[test]
+    fn paste_grande_recusado_antes_de_bloquear() {
+        // o write no PTY bloqueia quando o filho não drena stdin; melhor erro
+        // claro do que terminal pendurado (e antes o mapa ficava travado)
+        let st = PtyState::default();
+        let err = forward_output_to(&st, "alvo", &"x".repeat(MAX_PASTE + 1)).unwrap_err();
+        assert!(err.contains("grande demais"), "{err}");
+        // texto normal passa do teto e só falha por não achar o agente
+        let err = forward_output_to(&st, "alvo", "oi").unwrap_err();
+        assert!(err.contains("não encontrado"), "{err}");
     }
 
     #[test]

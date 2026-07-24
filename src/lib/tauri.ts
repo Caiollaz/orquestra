@@ -26,8 +26,6 @@ export const killAgent = (agentId: string) =>
   invoke<void>("kill_agent", { agentId });
 export const forwardOutput = (toAgent: string, text: string) =>
   invoke<void>("forward_output", { toAgent, text });
-/// ids dos agentes com PTY vivo (o front usa pra não semear contexto duas vezes)
-export const liveAgents = () => invoke<string[]>("live_agents");
 
 // ── papéis (roles.rs) ───────────────────────────────────────────────
 export type Role = { file: string; name: string; agent: string; description: string; body: string };
@@ -44,8 +42,9 @@ export type Context = { file: string; name: string; description: string; body: s
 export const listContexts = (repoPath: string) => invoke<Context[]>("list_contexts", { repoPath });
 export const saveContext = (repoPath: string, context: Context) => invoke<void>("save_context", { repoPath, context });
 export const deleteContext = (repoPath: string, file: string) => invoke<void>("delete_context", { repoPath, file });
-export const applyContexts = (agentId: string, contexts: Context[], vars: Record<string, string> = {}) =>
-  invoke<void>("apply_contexts", { agentId, contexts, vars });
+/// corpo vai verbatim (sem {{var}}): contexto é documentação e cita template
+export const applyContexts = (agentId: string, contexts: Context[]) =>
+  invoke<void>("apply_contexts", { agentId, contexts });
 
 // ── floors / worktrees (git.rs) ─────────────────────────────────────
 export type Floor = { slug: string; branch: string; path: string };
@@ -63,7 +62,12 @@ export type WsAgent = {
 export type WorkspaceMeta = { id: string; name: string; repoPath: string };
 // estado serializado do canvas (nós de todo tipo + arestas) — opaco pro Rust
 export type CanvasNode = { id: string; type: string; x: number; y: number; w?: number; h?: number; data: Record<string, unknown> };
-export type CanvasState = { nodes: CanvasNode[]; edges: { id: string; source: string; target: string }[] };
+export type CanvasState = {
+  nodes: CanvasNode[];
+  edges: { id: string; source: string; target: string }[];
+  /// contextos que todo agente claude novo deste workspace recebe ao subir
+  defaultContexts?: string[];
+};
 
 export type Workspace = {
   id: string; name: string; repoPath: string; createdAt?: string;

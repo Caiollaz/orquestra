@@ -24,9 +24,13 @@ pub fn worktree_path(repo: &str, slug: &str) -> PathBuf {
 }
 
 fn git(repo: &str, args: &[&str]) -> Result<String, String> {
-    let out = Command::new("git")
+    // app GUI não herda o PATH do shell de login (contrato 4): resolve o binário
+    // pelo PATH aumentado e passa esse PATH pro filho.
+    let path = crate::pty::augmented_path();
+    let out = Command::new(crate::pty::resolve_program("git", &path))
         .current_dir(repo)
         .args(args)
+        .env("PATH", &path)
         .output()
         .map_err(|e| format!("git não encontrado: {e}"))?;
     if out.status.success() {
@@ -54,17 +58,15 @@ pub fn create_floor(repo_path: String, slug: String) -> Result<Floor, String> {
     Ok(Floor { slug, branch, path: path_str })
 }
 
-/// Arquivos pendentes (não commitados) dentro do worktree do floor.
-/// Vazio = seguro remover. Worktree inexistente/sem git devolve vazio: o
-/// `worktree remove` reporta o erro de verdade depois.
-pub fn pending_changes(worktree: &Path) -> Vec<String> {
+/// Trabalho que morre se o floor for removido. `--ignored=matching` é essencial:
+/// `git status` normal **não** lista arquivos ignorados (`.env`, config local,
+/// cache de build), mas o `git worktree remove` apaga a pasta inteira — sem isso
+/// a guarda da regra 8 passava batido e destruía trabalho de verdade.
+/// `-uall` lista arquivo por arquivo em vez de só o diretório.
+pub fn pending_changes(worktree: &Path) -> Result<Vec<String>, String> {
     let dir = worktree.to_string_lossy().to_string();
-    git(&dir, &["status", "--porcelain"])
-        .unwrap_or_default()
-        .lines()
-        .map(|l| l.trim().to_string())
-        .filter(|l| !l.is_empty())
-        .collect()
+    let out = git(&dir, &["status", "--porcelain", "-uall", "--ignored=matching"])?;
+    Ok(out.lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).collect())
 }
 
 /// Remove o floor. Sem `force`, recusa se houver trabalho não commitado —
@@ -74,7 +76,13 @@ pub fn remove_floor(repo_path: String, slug: String, force: Option<bool>) -> Res
     let path = worktree_path(&repo_path, &slug);
     let forced = force.unwrap_or(false);
     if !forced {
-        let pending = pending_changes(&path);
+        // não conseguir verificar não é sinal verde: se a pasta existe e o git
+        // falhou, recusa (falha fechada — a operação é destrutiva).
+        let pending = match pending_changes(&path) {
+            Ok(p) => p,
+            Err(e) if path.exists() => return Err(format!("não deu pra verificar o floor \"{slug}\": {e}")),
+            Err(_) => Vec::new(), // worktree já não existe → deixa o git limpar o registro
+        };
         if !pending.is_empty() {
             let amostra: Vec<&str> = pending.iter().take(5).map(String::as_str).collect();
             return Err(format!(
@@ -120,6 +128,7 @@ mod tests {
         git(&repo, &["config", "user.email", "t@t"]).unwrap();
         git(&repo, &["config", "user.name", "t"]).unwrap();
         std::fs::write(tmp.join("f.txt"), "x").unwrap();
+        std::fs::write(tmp.join(".gitignore"), ".env\n").unwrap();
         git(&repo, &["add", "-A"]).unwrap();
         git(&repo, &["commit", "-qm", "init"]).unwrap();
 
@@ -130,13 +139,24 @@ mod tests {
 
         // regra 8: com trabalho não commitado, remover sem force é recusado
         std::fs::write(Path::new(&f.path).join("rascunho.txt"), "trabalho").unwrap();
-        assert!(!pending_changes(Path::new(&f.path)).is_empty());
+        assert!(!pending_changes(Path::new(&f.path)).unwrap().is_empty());
         let err = remove_floor(repo.clone(), "feature-um".into(), None).unwrap_err();
         assert!(err.contains("rascunho.txt"), "erro deve listar o pendente: {err}");
         assert!(Path::new(&f.path).exists(), "floor sujo não pode ser removido sem force");
 
-        // limpo (ou com force explícito) remove de verdade
+        // arquivo IGNORADO também é trabalho: `git status` puro esconde, mas o
+        // `worktree remove` apaga a pasta inteira. Sem `--ignored` a guarda da
+        // regra 8 passava batido e destruía o .env do usuário.
         std::fs::remove_file(Path::new(&f.path).join("rascunho.txt")).unwrap();
+        std::fs::write(Path::new(&f.path).join(".env"), "SEGREDO=1").unwrap();
+        let puro = git(&f.path, &["status", "--porcelain"]).unwrap();
+        assert!(puro.is_empty(), "status puro deveria esconder o ignorado: {puro:?}");
+        let err = remove_floor(repo.clone(), "feature-um".into(), None).unwrap_err();
+        assert!(err.contains(".env"), "ignorado tem que contar como pendente: {err}");
+        assert!(Path::new(&f.path).join(".env").exists());
+
+        // limpo (ou com force explícito) remove de verdade
+        std::fs::remove_file(Path::new(&f.path).join(".env")).unwrap();
         remove_floor(repo.clone(), "feature-um".into(), None).unwrap();
         assert!(!Path::new(&f.path).exists());
         std::fs::remove_dir_all(&tmp).ok();

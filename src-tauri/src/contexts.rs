@@ -9,7 +9,6 @@
 // (frontmatter opcional + corpo com {{var}}), mas o nome/descrição caem pro
 // primeiro `# título` quando não há frontmatter — é como o usuário escreve.
 
-use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -17,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::pty::{forward_output_to, PtyState};
-use crate::roles::{file_ok, render_template, split_frontmatter};
+use crate::roles::{file_ok, split_frontmatter};
 
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -109,30 +108,29 @@ pub fn delete_context(repo_path: String, file: String) -> Result<(), String> {
 /// Junta os contextos num bloco único. Uma submissão só: dois bracketed-paste
 /// seguidos se atropelam no prompt do claude (o segundo chega enquanto o
 /// primeiro ainda está sendo processado).
-pub fn compose_contexts(contexts: &[Context], vars: &HashMap<String, String>) -> String {
+///
+/// O corpo vai **verbatim**, sem `render_template`: contexto é documentação, e
+/// documentação de projeto cita `{{var}}`, Handlebars, Jinja e afins. Renderizar
+/// apagava esses trechos (var ausente → vazio). Template é coisa de papel.
+pub fn compose_contexts(contexts: &[Context]) -> String {
     let n = contexts.len();
     let mut out = format!(
         "(contexto) {n} bloco{} de contexto do projeto. Absorva as regras e responda apenas OK.\n",
         if n == 1 { "" } else { "s" }
     );
     for c in contexts {
-        out.push_str(&format!("\n=== {} ===\n{}\n", c.name, render_template(&c.body, vars)));
+        out.push_str(&format!("\n=== {} ===\n{}\n", c.name, c.body));
     }
     out
 }
 
 /// Semeia os contextos no stdin do agente (bracketed-paste, uma submissão).
 #[tauri::command]
-pub fn apply_contexts(
-    state: State<PtyState>,
-    agent_id: String,
-    contexts: Vec<Context>,
-    vars: HashMap<String, String>,
-) -> Result<(), String> {
+pub fn apply_contexts(state: State<PtyState>, agent_id: String, contexts: Vec<Context>) -> Result<(), String> {
     if contexts.is_empty() {
         return Ok(());
     }
-    forward_output_to(&state, &agent_id, &compose_contexts(&contexts, &vars))
+    forward_output_to(&state, &agent_id, &compose_contexts(&contexts))
 }
 
 #[cfg(test)]
@@ -165,21 +163,20 @@ mod tests {
     }
 
     #[test]
-    fn compose_um_bloco_por_contexto_com_vars() {
+    fn compose_um_bloco_por_contexto_verbatim() {
         let ctx = |name: &str, body: &str| Context {
             file: format!("{name}.md"),
             name: name.into(),
             description: String::new(),
             body: body.into(),
         };
-        let mut vars = HashMap::new();
-        vars.insert("repo".to_string(), "orquestra".to_string());
-        let text = compose_contexts(&[ctx("A", "regra de {{repo}}"), ctx("B", "outra")], &vars);
+        let text = compose_contexts(&[ctx("A", "corpo com {{var}} citado"), ctx("B", "outra")]);
         assert!(text.starts_with("(contexto) 2 blocos"));
-        assert!(text.contains("=== A ===\nregra de orquestra"));
+        // documentação cita {{var}} — tem que chegar inteiro no agente
+        assert!(text.contains("=== A ===\ncorpo com {{var}} citado"), "template não pode ser renderizado: {text}");
         assert!(text.contains("=== B ===\noutra"));
         // singular quando é um só
-        assert!(compose_contexts(&[ctx("A", "x")], &vars).starts_with("(contexto) 1 bloco de"));
+        assert!(compose_contexts(&[ctx("A", "x")]).starts_with("(contexto) 1 bloco de"));
     }
 
     #[test]

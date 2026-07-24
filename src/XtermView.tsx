@@ -10,7 +10,14 @@ import { terminals } from "./shared";
 const IDLE_MS = 1000;
 
 // Terminal xterm ligado a um PTY no Rust. Instância vive fora do React (ref).
-export function XtermView({ agentId, cmd, cwd, onIdle }: { agentId: string; cmd: AgentCmd; cwd: string; onIdle?: (id: string) => void }) {
+export function XtermView({ agentId, cmd, cwd, onIdle, onSpawn }: {
+  agentId: string; cmd: AgentCmd; cwd: string;
+  onIdle?: (id: string) => void;
+  /// avisa que subiu um processo NOVO pra esse id (montagem ou remontagem do nó):
+  /// o processo não lembra nada, então quem semeia protocolo/contexto precisa
+  /// esquecer o que já semeou pro id.
+  onSpawn?: (id: string) => void;
+}) {
   const boxRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -61,6 +68,7 @@ export function XtermView({ agentId, cmd, cwd, onIdle }: { agentId: string; cmd:
       idleTimer = window.setTimeout(() => onIdle?.(agentId), IDLE_MS);
     };
 
+    onSpawn?.(agentId);
     // erro de spawn (ex: binário não encontrado) aparece no terminal em vez de tela vazia
     spawnAgent(agentId, cmd, cwd, term.cols, term.rows, (bytes) => { term.write(bytes); bump(); }).catch((e) =>
       term.write(`\r\n\x1b[31m[falha ao iniciar: ${e}]\x1b[0m\r\n`),

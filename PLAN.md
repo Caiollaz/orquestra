@@ -38,10 +38,24 @@ A definir (M3+): `list/create/load/save_workspace`, `pick_directory` (tauri-plug
 - **M0 — scaffold** ✅ create-tauri-app react-ts, deps.
 - **M1 — hello PTY** ✅ spawn/stream/stdin/resize/kill via Channel.
 - **M2 — canvas multi-agente** ✅ ReactFlow + AgentNode(xterm), + shell / + claude, drag/zoom, kill.
-- **M3 — persistência/workspaces** ⬜ index.json + workspaces/<id>.json, pick_directory, restaura layout.
-- **M4 — papéis** ⬜ parse `.orquestra/roles/*.md`, RolePicker, apply_role (idle-debounce ~750ms + botão manual).
-- **M5 — floors** ⬜ create/remove_floor via `git worktree`, FloorSwitcher, spawn com cwd=floor.
-- **M6 — comunicação** ⬜ forward_output entre nós + aresta no ReactFlow.
+- **M3 — persistência/workspaces** ✅ index.json + workspaces/<id>.json, pick_directory,
+  restaura layout do canvas inteiro (nós de todo tipo, arestas, notas, agendamentos) + autosave.
+- **M4 — papéis** ✅ parse `.orquestra/roles/*.md`, RolePicker, apply_role, selo no nó.
+- **M5 — floors** ✅ create/remove_floor via `git worktree`, menu de floors, spawn com cwd=floor.
+  Remover exige `force` explícito quando há trabalho não commitado (regra 8).
+- **M6 — comunicação** ✅ forward_output entre nós + aresta que acende quando dado flui.
+- **M7 — contextos + batuta** ✅ `contexts.rs`: blocos de regra de negócio em
+  `.orquestra/contexts/*.md`, empilháveis por agente e com "padrões do workspace"
+  semeados em todo agente claude novo (2º idle, depois do protocolo). `Batuta.tsx`:
+  paleta de comandos. Renomear rótulo avisando as rotas afetadas.
+
+## Papel × contexto (não confundir)
+- **Papel** = *quem o agente é*. Um por agente, define comportamento (`roles/*.md`,
+  frontmatter `name/agent/description`). Semeado por `apply_role`.
+- **Contexto** = *o que o agente precisa saber*. Vários por agente, empilháveis,
+  iguais pra todo mundo do canvas (`contexts/*.md`, título markdown vira nome).
+  Semeado por `apply_contexts` — **uma submissão só** pra vários blocos, porque
+  dois bracketed-paste seguidos se atropelam no prompt do claude.
 
 ## Pontos delicados (ver §5 da arquitetura)
 - Muitos terminais: **addon-canvas** (não webgl). Thumbnail em zoom baixo só se medir dor.

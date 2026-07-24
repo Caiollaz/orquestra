@@ -93,12 +93,18 @@ pub fn parse_role(file: &str, raw: &str) -> Role {
     }
 }
 
-/// Valida nome de arquivo vindo do front antes de tocar o disco: só
-/// `[a-z0-9-].md`. Barra `../`, caminho absoluto e qualquer travessia.
+/// Valida nome de arquivo vindo do front antes de tocar o disco. Barra `../`,
+/// caminho absoluto e qualquer travessia. Aceita maiúsculas, `_` e `.` no meio
+/// porque papel/contexto também é arquivo escrito à mão fora do app — recusar
+/// `Regras_Negocio.md` deixava o arquivo listado na UI e impossível de apagar.
 pub(crate) fn file_ok(file: &str) -> Result<(), String> {
     let stem = file.strip_suffix(".md").unwrap_or("");
     let ok = !stem.is_empty()
-        && stem.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
+        && !stem.starts_with('.')
+        && !stem.contains("..")
+        && stem
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.');
     if ok { Ok(()) } else { Err(format!("nome de arquivo inválido: {file}")) }
 }
 
@@ -200,10 +206,12 @@ mod tests {
 
     #[test]
     fn file_ok_barra_travessia() {
-        assert!(file_ok("po.md").is_ok());
-        assert!(file_ok("papel-2.md").is_ok());
-        // travessia, caminho absoluto, extensão errada e maiúsculas: recusados
-        for bad in ["../../etc/passwd.md", "/etc/passwd.md", "a/b.md", "po.txt", "PO.md", ".md", ""] {
+        // nomes escritos à mão fora do app também valem
+        for good in ["po.md", "papel-2.md", "Regras_Negocio.md", "v1.2.md"] {
+            assert!(file_ok(good).is_ok(), "deveria aceitar: {good}");
+        }
+        // travessia, caminho absoluto, extensão errada, oculto: recusados
+        for bad in ["../../etc/passwd.md", "/etc/passwd.md", "a/b.md", "..md", "po.txt", ".oculto.md", ".md", ""] {
             assert!(file_ok(bad).is_err(), "deveria recusar: {bad}");
         }
     }

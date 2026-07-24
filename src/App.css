@@ -326,6 +326,46 @@ body {
   padding: 0 5px; margin-left: 4px;
 }
 .agent-btn.is-on { color: var(--brass); }
+/* selo de contextos semeados: mesma família do papel, tom mais frio */
+.agent-ctx-tag {
+  font: 11px var(--mono); color: var(--muted);
+  border: 1px solid var(--border); border-radius: 4px;
+  padding: 0 5px; margin-left: 4px;
+}
+
+/* ---- contextos + batuta ----------------------------------------- */
+
+.ctx-pick { cursor: pointer; }
+.ctx-pick.is-marked { border-color: var(--brass-dim); background: rgba(198, 154, 85, 0.06); }
+.ctx-check { accent-color: var(--brass); width: 14px; height: 14px; flex: 0 0 auto; }
+.ctx-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 10px; }
+.ctx-foot .role-new { margin-top: 0; }
+
+.batuta-backdrop { align-items: flex-start; padding-top: 12vh; }
+.batuta {
+  width: 560px; max-width: 92vw;
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: 0 24px 70px rgba(0, 0, 0, 0.65);
+  overflow: hidden;
+}
+.batuta-input {
+  width: 100%; box-sizing: border-box; border: 0; outline: 0;
+  background: transparent; color: var(--text);
+  font: 14px var(--mono); padding: 14px 16px;
+  border-bottom: 1px solid var(--border-soft);
+}
+.batuta-list { max-height: 52vh; overflow: auto; padding: 6px; }
+.batuta-item {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  background: transparent; border: 0; border-radius: 6px;
+  color: var(--text); font: 12.5px var(--mono); text-align: left;
+  padding: 7px 8px; cursor: pointer;
+}
+.batuta-item.is-on { background: rgba(198, 154, 85, 0.14); }
+.batuta-item .ctx-ico { display: inline-flex; width: 15px; height: 15px; color: var(--muted); }
+.batuta-item .ctx-ico svg { width: 15px; height: 15px; }
+.batuta-lbl { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.batuta-group { color: var(--muted); font-size: 11px; flex: 0 0 auto; max-width: 42%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ---- selects da barra ------------------------------------------- */
 

@@ -24,7 +24,6 @@ pub fn run() {
             pty::resize_pty,
             pty::kill_agent,
             pty::forward_output,
-            pty::live_agents,
             roles::list_roles,
             roles::save_role,
             roles::delete_role,

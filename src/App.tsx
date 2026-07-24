@@ -23,19 +23,28 @@ import { NoteNode, type NoteNodeData } from "./NoteNode";
 import { ShapeNode, type ShapeNodeData } from "./ShapeNode";
 import { PortalNode, type PortalNodeData } from "./PortalNode";
 import { RolePicker } from "./RolePicker";
+import { ContextPicker } from "./ContextPicker";
+import { Batuta, type BatutaItem } from "./Batuta";
 import { Sidebar, folderName } from "./Sidebar";
 import { ContextMenu, type MenuState, type MenuItem } from "./ContextMenu";
 import { DialogHost, askText, askConfirm, alertMsg } from "./Dialog";
 import {
   forwardOutput, applyRole, createFloor, removeFloor, openEditor,
   listWorkspaces, loadWorkspace, saveWorkspace, deleteWorkspace,
-  type AgentCmd, type Role, type Floor, type WorkspaceMeta, type WsAgent, type Workspace, type CanvasState,
+  listContexts, applyContexts,
+  type AgentCmd, type Role, type Floor, type WorkspaceMeta, type WsAgent, type Workspace, type CanvasState, type Context,
 } from "./lib/tauri";
 import { terminals, noteText } from "./shared";
 import "./App.css";
 
 const nodeTypes: NodeTypes = { agent: AgentNode, note: NoteNode, shape: ShapeNode, portal: PortalNode };
 let seq = 0;
+
+// linha de rota do protocolo: "⇢destino: mensagem", tolerando bullets do TUI
+const ROTA = /^[\s⏺●•>*-]*⇢\s*([^\s:]+)\s*:\s*(.+)$/u;
+const rotaKey = (dest: string, msg: string) => `${dest.toLowerCase()} :: ${msg.trim()}`;
+// por quanto tempo uma rota que NÓS enviamos é tratada como eco (redraw do TUI)
+const ECO_MS = 120_000;
 
 // naipes da orquestra: cada agente novo pega a próxima cor (latão, cordas,
 // madeiras, percussão) — identidade visual pra distinguir nós de relance
@@ -57,6 +66,8 @@ const icons = {
   clock: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>,
   role: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><circle cx="12" cy="12" r="8" /><circle cx="12" cy="12" r="3" /></svg>,
   send: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M5 12h14M13 6l6 6-6 6" /></svg>,
+  context: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M4 5a2 2 0 0 1 2-2h9l5 5v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z" /><path d="M14 3v5h5M8 13h7M8 17h5" /></svg>,
+  batuta: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><circle cx="6.5" cy="17.5" r="2.5" /><path d="M8.5 15.5 19 5" /></svg>,
 };
 
 export default function App() {
@@ -69,6 +80,23 @@ export default function App() {
   nodesRef.current = nodes;
   const lastLineRef = useRef(new Map<string, number>());
   const seededRef = useRef(new Set<string>());
+  // Eco anti-cascata (regra 5): tudo que MANDAMOS pra um agente reaparece no
+  // terminal dele (o TUI ecoa o paste). Um bloco de contexto que documenta o
+  // protocolo — linha começando com ⇢ — viraria rota de verdade nesse eco.
+  // Guardamos as rotas enviadas por agente e engolimos a primeira repetição.
+  // Janela de tempo, não "engole a primeira": o TUI redesenha a tela e a mesma
+  // linha reaparece no buffer várias vezes. Depois da janela, a rota volta a
+  // valer — o agente pode legitimamente repetir um comando mais tarde.
+  const sentRef = useRef(new Map<string, Map<string, number>>());
+  const rememberSent = useCallback((id: string, text: string) => {
+    const ate = Date.now() + ECO_MS;
+    const m0 = sentRef.current.get(id) ?? new Map<string, number>();
+    for (const line of text.split("\n")) {
+      const m = line.match(ROTA);
+      if (m) m0.set(rotaKey(m[1], m[2]), ate);
+    }
+    if (m0.size) sentRef.current.set(id, m0);
+  }, []);
   const schedRef = useRef(new Map<string, number>());
   // spec dos agendamentos (intervalo+texto) pra persistir no workspace
   const schedSpecRef = useRef(new Map<string, { secs: number; text: string }>());
@@ -93,14 +121,38 @@ export default function App() {
 
   const [workspaces, setWorkspaces] = useState<WorkspaceMeta[]>([]);
   const [wsId, setWsId] = useState("");
+  // ids de nó se repetem entre workspaces (seq zera a cada sessão), então toda
+  // ação que espera um diálogo confere que o canvas não trocou no meio.
+  const wsIdRef = useRef("");
+  wsIdRef.current = wsId;
   const [wsName, setWsName] = useState("");
   const [collapsed, setCollapsed] = useState(false);
 
   const [roleTarget, setRoleTarget] = useState<string | null>(null);
   const [menu, setMenu] = useState<MenuState | null>(null);
+  const [batuta, setBatuta] = useState(false);
+
+  // ── contextos ────────────────────────────────────────────────────
+  // catálogo do repo + os "padrões do workspace" (semeados em todo agente
+  // claude novo). ctxSeededRef é transiente: depois de recarregar, o PTY é
+  // novo e o processo não lembra nada → semeia de novo.
+  const [contexts, setContexts] = useState<Context[]>([]);
+  const [defaultContexts, setDefaultContexts] = useState<string[]>([]);
+  const [ctxTarget, setCtxTarget] = useState<string | null | undefined>(undefined); // undefined = fechado, null = só gerenciar
+  const contextsRef = useRef<Context[]>([]);
+  contextsRef.current = contexts;
+  const defaultsRef = useRef<string[]>([]);
+  defaultsRef.current = defaultContexts;
+  const ctxSeededRef = useRef(new Set<string>());
 
   const refreshWs = useCallback(() => { listWorkspaces().then(setWorkspaces).catch(() => {}); }, []);
   useEffect(() => { refreshWs(); }, [refreshWs]);
+
+  // catálogo de contextos vem do repo aberto (.orquestra/contexts/*.md)
+  const refreshContexts = useCallback(() => {
+    listContexts(cwd).then(setContexts).catch(() => setContexts([]));
+  }, [cwd]);
+  useEffect(() => { refreshContexts(); }, [refreshContexts]);
 
   useEffect(() => {
     const un = listen<string>("agent-exited", (e) => {
@@ -152,11 +204,25 @@ export default function App() {
     noteText.delete(id);
     lastLineRef.current.delete(id);
     seededRef.current.delete(id);
+    ctxSeededRef.current.delete(id);
+    sentRef.current.delete(id);
     const t = schedRef.current.get(id);
     if (t) { clearInterval(t); schedRef.current.delete(id); }
     schedSpecRef.current.delete(id);
     dirty();
   }, [dirty]);
+
+  // processo NOVO pro mesmo id (o nó remontou): o claude que sobe não lembra
+  // nada, então esquecemos protocolo/contexto já semeados e o offset de leitura
+  // do buffer — senão o agente ficava sem instrução nenhuma e o `readNewLines`
+  // lia de um índice que não existe mais.
+  const agentRespawned = useCallback((id: string) => {
+    seededRef.current.delete(id);
+    ctxSeededRef.current.delete(id);
+    sentRef.current.delete(id);
+    lastLineRef.current.delete(id);
+    setNodes((ns) => ns.map((n) => (n.id === id && (n.data as AgentNodeData).exited ? { ...n, data: { ...n.data, exited: false } } : n)));
+  }, []);
 
   const readNewLines = useCallback((id: string): string[] => {
     const term = terminals.get(id);
@@ -178,22 +244,72 @@ export default function App() {
   const seedPrompt = (label: string) =>
     `Você é o nó "${label}" num canvas do orquestra, junto com outros agentes. Mensagens de outros chegam como "(de nome) texto". Para falar com um nó conectado a você, escreva uma linha própria no formato ⇢NOME: texto — NOME é o título do nó de destino, ou a palavra todos para todos os conectados. Se o nó conectado for um terminal shell, ⇢NOME: comando digita e executa o comando NAQUELE terminal — quando o usuário pedir para rodar algo "no terminal", delegue assim, não execute você mesmo. Para registrar algo numa nota conectada, escreva ⇢nota: texto. Você será avisado com "(sistema) ..." quando novas conexões forem criadas. Alinhamento: mantenha o quadro .orquestra/board.md na raiz do projeto — registre nele suas ações, decisões e status, e consulte-o antes de cada tarefa nova. Responda apenas OK.`;
 
+  // semeia num agente os contextos escolhidos (uma submissão só, via Rust) e
+  // registra no nó o que foi semeado — persiste e vira selo no header.
+  // recebe os objetos prontos (o picker já os tem): resolver por nome de arquivo
+  // no catálogo do App falhava calado quando o contexto tinha acabado de ser
+  // criado e o catálogo ainda não havia recarregado.
+  const seedContexts = useCallback(async (id: string, picked: Context[]) => {
+    if (!picked.length) return false;
+    // contexto costuma documentar o próprio protocolo ⇢ — não deixa o eco rotear
+    rememberSent(id, picked.map((c) => c.body).join("\n"));
+    try {
+      await applyContexts(id, picked);
+    } catch (e) {
+      void alertMsg("Erro ao semear contexto", String(e));
+      return false;
+    }
+    ctxSeededRef.current.add(id);
+    setNodes((ns) => ns.map((n) => (n.id === id ? { ...n, data: { ...n.data, contexts: picked.map((c) => c.file) } } : n)));
+    dirty();
+    return true;
+  }, [dirty, rememberSent]);
+
+  // caminho automático (idle): resolve os arquivos no catálogo carregado. Se o
+  // catálogo ainda não chegou, devolve falso SEM marcar como semeado — senão o
+  // agente ficava sem contexto pelo resto da sessão.
+  const seedContextFiles = useCallback((id: string, files: string[]) => {
+    const picked = contextsRef.current.filter((c) => files.includes(c.file));
+    if (!picked.length) return false;
+    void seedContexts(id, picked);
+    return true;
+  }, [seedContexts]);
+
   const handleIdle = useCallback((id: string) => {
     const node = nodesRef.current.find((n) => n.id === id);
     if (!node) return;
     const d = node.data as AgentNodeData;
     const lines = readNewLines(id);
-    if (d.cmd.kind === "claude" && !seededRef.current.has(id)) {
-      seededRef.current.add(id);
-      void forwardOutput(id, seedPrompt(d.label)).catch(() => {});
-      return;
+    if (d.cmd.kind === "claude") {
+      // 1º idle: protocolo ⇢NOME:. 2º idle: contextos. Em submissões separadas —
+      // dois bracketed-paste juntos se atropelam no prompt do claude.
+      if (!seededRef.current.has(id)) {
+        seededRef.current.add(id);
+        void forwardOutput(id, seedPrompt(d.label)).catch(() => {});
+        return;
+      }
+      if (!ctxSeededRef.current.has(id)) {
+        // Nó restaurado repete os contextos dele; sem contextos próprios (nó novo
+        // ou salvo antes de existir padrão) pega os padrões do workspace.
+        // `?.length` e não `??`: lista vazia é ausência, e `[] ?? x` devolve [].
+        const alvo = d.contexts?.length ? d.contexts : defaultsRef.current;
+        if (seedContextFiles(id, alvo)) return;
+        // catálogo ainda carregando: tenta de novo no próximo idle
+      }
     }
     const targets = edgesRef.current.filter((e) => e.source === id).map((e) => e.target);
     if (!targets.length) return;
     for (const line of lines) {
-      const m = line.match(/^[\s⏺●•>*-]*⇢\s*([^\s:]+)\s*:\s*(.+)$/u);
+      const m = line.match(ROTA);
       if (!m) continue;
       const [, dest, msg] = m;
+      // eco do que nós mesmos semeamos/encaminhamos: dentro da janela, não roteia
+      const eco = sentRef.current.get(id);
+      const ate = eco?.get(rotaKey(dest, msg));
+      if (ate !== undefined) {
+        if (ate > Date.now()) continue;
+        eco!.delete(rotaKey(dest, msg)); // janela venceu: limpa e deixa passar
+      }
       if (dest.toLowerCase() === "nota") {
         targets.forEach((t) => {
           if (nodesRef.current.find((n) => n.id === t)?.type !== "note") return;
@@ -218,10 +334,11 @@ export default function App() {
         }
         // Shell recebe o texto CRU: o prefixo "(de X)" viraria comando inválido.
         const isShell = tn.type === "agent" && (tn.data as AgentNodeData).cmd.kind === "shell";
+        rememberSent(t, msg);
         void forwardOutput(t, isShell ? msg : `(de ${d.label}) ${msg}`).catch(() => {});
       });
     }
-  }, [readNewLines, flashEdge]);
+  }, [readNewLines, flashEdge, rememberSent, seedContextFiles]);
 
   const sendFrom = useCallback((sourceId: string) => {
     const targets = edgesRef.current.filter((e) => e.source === sourceId).map((e) => e.target);
@@ -229,25 +346,65 @@ export default function App() {
     const term = terminals.get(sourceId);
     const text = (term?.getSelection() || noteText.get(sourceId) || "").trim();
     if (!text) return;
-    targets.forEach((t) => { flashEdge(sourceId, t); void forwardOutput(t, text).catch(() => {}); });
-  }, [flashEdge]);
+    targets.forEach((t) => { flashEdge(sourceId, t); rememberSent(t, text); void forwardOutput(t, text).catch(() => {}); });
+  }, [flashEdge, rememberSent]);
 
   const openRole = useCallback((id: string) => setRoleTarget(id), []);
   const applyRoleToTarget = (role: Role) => {
     const id = roleTarget;
     if (!id) return;
+    rememberSent(id, role.body);
     void applyRole(id, role).catch(() => {});
     setNodes((ns) => ns.map((n) => (n.id === id ? { ...n, data: { ...n.data, roleName: role.name } } : n)));
     dirty();
   };
 
+  // rótulo é endereço de rota (⇢NOME:): único no canvas, sem espaço nem ":".
+  // Ao mudar, avisa o próprio nó e todos que apontam pra ele — senão eles
+  // continuam mandando pro nome antigo e a mensagem morre.
+  const renameNode = useCallback(async (id: string) => {
+    const node = nodesRef.current.find((n) => n.id === id);
+    if (!node) return;
+    const antes = String((node.data as { label?: string }).label ?? "");
+    const wsAntes = wsIdRef.current;
+    const r = await askText("Renomear nó", [{ label: "rótulo (endereço nas mensagens ⇢)", default: antes }]);
+    if (wsIdRef.current !== wsAntes) return; // trocou de canvas enquanto o diálogo estava aberto
+    const label = r?.[0]?.trim();
+    if (!label || label === antes) return;
+    if (/[\s:]/.test(label)) {
+      void alertMsg("Rótulo inválido", "O rótulo é endereço de rota: sem espaços e sem \":\".");
+      return;
+    }
+    // "todos" e "nota" são destinos reservados do protocolo: um nó com esses
+    // nomes fica inalcançável individualmente (broadcast / nota ganham antes).
+    if (label.toLowerCase() === "todos" || label.toLowerCase() === "nota") {
+      void alertMsg("Rótulo reservado", `"${label}" é destino reservado do protocolo ⇢ — escolha outro.`);
+      return;
+    }
+    if (nodesRef.current.some((n) => n.id !== id && (n.data as { label?: string }).label === label)) {
+      void alertMsg("Rótulo repetido", `Já existe um nó "${label}" neste canvas.`);
+      return;
+    }
+    setNodes((ns) => ns.map((n) => (n.id === id ? { ...n, data: { ...n.data, label } } : n)));
+    dirty();
+    const isClaude = (n?: Node) => n?.type === "agent" && (n.data as AgentNodeData).cmd.kind === "claude";
+    if (isClaude(node)) void forwardOutput(id, `(sistema) seu rótulo agora é "${label}" (era "${antes}").`).catch(() => {});
+    for (const e of edgesRef.current.filter((e) => e.target === id)) {
+      if (isClaude(nodesRef.current.find((n) => n.id === e.source)))
+        void forwardOutput(e.source, `(sistema) o nó "${antes}" agora se chama "${label}" — use ⇢${label}: daqui pra frente.`).catch(() => {});
+    }
+  }, [dirty]);
+
   // liga o intervalo e registra o spec (o spec vai pro workspace no autosave)
   const startSchedule = useCallback((id: string, secs: number, text: string) => {
-    const t = window.setInterval(() => { void forwardOutput(id, text).catch(() => {}); }, secs * 1000);
+    const t = window.setInterval(() => {
+      rememberSent(id, text);
+      void forwardOutput(id, text).catch(() => {});
+    }, secs * 1000);
     schedRef.current.set(id, t);
     schedSpecRef.current.set(id, { secs, text });
     setNodes((ns) => ns.map((n) => (n.id === id ? { ...n, data: { ...n.data, scheduled: true } } : n)));
-  }, []);
+  }, [rememberSent]);
 
   const scheduleAgent = useCallback(async (id: string) => {
     const existing = schedRef.current.get(id);
@@ -259,11 +416,12 @@ export default function App() {
       dirty();
       return;
     }
+    const wsAntes = wsIdRef.current;
     const r = await askText("Agendar prompt", [
       { label: "intervalo (segundos)", default: "300", type: "number" },
       { label: "prompt a enviar", placeholder: "ex: rode os testes e me diga o status" },
     ]);
-    if (!r) return;
+    if (!r || wsIdRef.current !== wsAntes) return; // canvas trocou no meio
     const secs = Number(r[0]);
     const text = r[1]?.trim();
     if (!secs || secs <= 0 || !text) return;
@@ -273,7 +431,8 @@ export default function App() {
 
   const agentData = (label: string, cmd: AgentCmd, section: string, extra: Partial<AgentNodeData> = {}): AgentNodeData => ({
     label, cmd, cwd: activeCwd, section,
-    onKill: killNode, onSend: sendFrom, onIdle: handleIdle, onRole: openRole, onSchedule: scheduleAgent,
+    onKill: killNode, onSend: sendFrom, onIdle: handleIdle, onSpawn: agentRespawned,
+    onRole: openRole, onSchedule: scheduleAgent,
     ...extra,
   });
 
@@ -334,12 +493,25 @@ export default function App() {
       const f = await createFloor(cwd, slug);
       setFloors((fs) => [...fs, f]);
       setActiveFloor(f.slug);
+      dirty(); // sem isso o worktree existe no disco mas não no workspace: no
+      // reload o create_floor recusa com "já existe" e a UI não oferece saída
     } catch (e) { void alertMsg("Erro ao criar floor", String(e)); }
   };
+  // remove sem force: o Rust recusa se houver trabalho não commitado (regra 8).
+  // Só depois de o usuário confirmar o descarte é que repetimos com force.
   const dropFloor = async (slug: string) => {
-    try { await removeFloor(cwd, slug); } catch (e) { void alertMsg("Erro ao remover floor", String(e)); }
+    try {
+      await removeFloor(cwd, slug);
+    } catch (e) {
+      const msg = String(e);
+      if (!msg.includes("não commitada")) { void alertMsg("Erro ao remover floor", msg); return; }
+      if (!(await askConfirm("Descartar trabalho do floor?", `${msg}`, true))) return;
+      try { await removeFloor(cwd, slug, true); }
+      catch (e2) { void alertMsg("Erro ao remover floor", String(e2)); return; }
+    }
     setFloors((fs) => fs.filter((f) => f.slug !== slug));
     if (activeFloor === slug) setActiveFloor("");
+    dirty(); // senão o floor removido volta no reload apontando pra pasta que não existe
   };
 
   // ── workspaces ──────────────────────────────────────────────────
@@ -360,7 +532,11 @@ export default function App() {
         switch (n.type) {
           case "agent": {
             const a = n.data as AgentNodeData;
-            return { ...base, data: { label: a.label, cmd: a.cmd, cwd: a.cwd, roleName: a.roleName ?? null, schedule: schedSpecRef.current.get(n.id) ?? null } };
+            return { ...base, data: {
+              label: a.label, cmd: a.cmd, cwd: a.cwd, roleName: a.roleName ?? null,
+              contexts: a.contexts ?? [],
+              schedule: schedSpecRef.current.get(n.id) ?? null,
+            } };
           }
           case "note": return { ...base, data: { text: noteText.get(n.id) ?? "" } };
           case "shape": return { ...base, data: { label: d.label ?? "", variant: d.variant ?? "box" } };
@@ -369,6 +545,7 @@ export default function App() {
         }
       }),
       edges: edgesRef.current.map((e) => ({ id: e.id, source: e.source, target: e.target })),
+      defaultContexts: defaultsRef.current,
     };
     const viewport = rfRef.current?.getViewport() ?? { x: 0, y: 0, zoom: 1 };
     return { id, name, repoPath: cwd, viewport, agents, floors, canvas };
@@ -398,6 +575,8 @@ export default function App() {
     noteText.clear();
     lastLineRef.current.clear();
     seededRef.current.clear();
+    ctxSeededRef.current.clear();
+    sentRef.current.clear();
   };
 
   const doLoad = async (id: string) => {
@@ -412,6 +591,7 @@ export default function App() {
       let restored: Node[];
       let restoredEdges: Edge[] = [];
       const canvas = ws.canvas;
+      setDefaultContexts(canvas?.defaultContexts ?? []);
       if (canvas?.nodes?.length || canvas?.edges?.length) {
         let idx = 0;
         restored = (canvas.nodes ?? []).map((cn) => {
@@ -425,6 +605,7 @@ export default function App() {
               return { ...base, data: agentData(String(d.label ?? cn.id), d.cmd as AgentCmd, SECTIONS[idx++ % SECTIONS.length], {
                 cwd: String(d.cwd ?? ws.repoPath),
                 roleName: (d.roleName as string | null) ?? undefined,
+                contexts: (d.contexts as string[] | undefined) ?? undefined,
                 scheduled: !!sched,
               }) };
             }
@@ -477,6 +658,7 @@ export default function App() {
       refreshWs();
       resetTransient();
       setCwd(dir); setFloors([]); setActiveFloor(""); setNodes([]); setEdges([]);
+      setDefaultContexts([]); // catálogo de contextos é por repo
       setWsId(id); setWsName(name);
     } catch (e) { void alertMsg("Erro ao abrir pasta", String(e)); }
   };
@@ -528,16 +710,92 @@ export default function App() {
     e.preventDefault();
     const items: MenuItem[] = [];
     if (node.type === "agent") {
+      // papel e contexto são PROSA: num shell cada linha do markdown viraria
+      // comando (com `>` truncando arquivo). Só oferece pra claude.
+      if ((node.data as AgentNodeData).cmd.kind === "claude") {
+        items.push(
+          { label: "Atribuir papel", icon: icons.role, onClick: () => openRole(node.id) },
+          { label: "Semear contextos", icon: icons.context, onClick: () => setCtxTarget(node.id) },
+        );
+      }
       items.push(
-        { label: "Atribuir papel", icon: icons.role, onClick: () => openRole(node.id) },
         { label: "Agendar prompt", icon: icons.clock, onClick: () => scheduleAgent(node.id) },
         { label: "Enviar seleção", icon: icons.send, onClick: () => sendFrom(node.id) },
         { sep: true },
       );
     }
+    if (node.type === "agent" || node.type === "portal") {
+      items.push({ label: "Renomear", icon: icons.edit, onClick: () => void renameNode(node.id) });
+    }
     items.push({ label: "Remover", danger: true, icon: icons.trash, onClick: () => killNode(node.id) });
     setMenu({ x: e.clientX, y: e.clientY, items });
   };
+
+  // ── batuta (paleta de comandos) ─────────────────────────────────
+  const centerPos = (): XYPosition =>
+    rfRef.current?.screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 }) ?? { x: 0, y: 0 };
+
+  const batutaItems = (): BatutaItem[] => {
+    const it: BatutaItem[] = [
+      { id: "n-shell", group: "criar", label: "Terminal shell", icon: icons.shell, run: () => addAgent({ kind: "shell", program: null }, "shell", centerPos()) },
+      { id: "n-claude", group: "criar", label: "Agente claude", icon: icons.claude, run: () => addAgent({ kind: "claude", extra_args: [] }, "claude", centerPos()) },
+      { id: "n-note", group: "criar", label: "Bloco de contexto", icon: icons.note, run: () => addNote(centerPos()) },
+      { id: "n-shape", group: "criar", label: "Forma (diagrama)", icon: icons.shape, run: () => addShape("box", centerPos()) },
+      { id: "n-portal", group: "criar", label: "Portal (navegador)", icon: icons.portal, run: () => addPortal(centerPos()) },
+      { id: "a-ctx", group: "contextos", label: "Gerenciar contextos", icon: icons.context, run: () => setCtxTarget(null) },
+      { id: "a-save", group: "workspace", label: "Salvar workspace", icon: icons.save, run: () => void doSave() },
+      { id: "a-folder", group: "workspace", label: "Abrir pasta…", icon: icons.folder, run: () => void newWorkspaceFromFolder() },
+      { id: "a-editor", group: "workspace", label: "Abrir no editor", icon: icons.code, run: () => void openEditor(activeCwd).catch((e) => alertMsg("Erro ao abrir editor", String(e))) },
+      { id: "f-new", group: "floors", label: "Novo floor…", icon: icons.layers, run: () => void addFloor() },
+    ];
+    for (const w of workspaces) {
+      if (w.id === wsId) continue;
+      it.push({ id: `w-${w.id}`, group: "workspace", label: `Abrir ${folderName(w)}`, hint: w.repoPath, icon: icons.folder, run: () => void openWs(w.id) });
+    }
+    if (activeFloor) it.push({ id: "raiz", group: "floors", label: "Ir pra raiz", icon: icons.folder, run: () => setActiveFloor("") });
+    for (const f of floors) {
+      if (f.slug === activeFloor) continue;
+      it.push({ id: `floor:${f.slug}`, group: "floors", label: `Floor ${f.slug}`, hint: f.branch, icon: icons.layers, run: () => setActiveFloor(f.slug) });
+    }
+    // agentes: focar no nó e semear contexto direto nele
+    for (const n of nodes) {
+      const label = String((n.data as { label?: string }).label ?? n.id);
+      it.push({ id: `go-${n.id}`, group: "nós", label: `Ir para ${label}`, hint: n.type, icon: icons.send,
+        run: () => rfRef.current?.fitView({ nodes: [{ id: n.id }], duration: 350, maxZoom: 1.1 }) });
+      if (n.type === "agent" && (n.data as AgentNodeData).cmd.kind === "claude")
+        it.push({ id: `ctx-${n.id}`, group: "contextos", label: `Semear contextos em ${label}`, icon: icons.context, run: () => setCtxTarget(n.id) });
+    }
+    return it;
+  };
+
+  // Atalhos. Ctrl+Shift+K abre a batuta em qualquer lugar (capturado antes do
+  // xterm, o terminal não vê); Ctrl+K só fora do terminal, pra não roubar o
+  // kill-line do shell. Mesma razão pro Ctrl+S (dentro do terminal é XOFF).
+  const doSaveRef = useRef(doSave);
+  doSaveRef.current = doSave;
+  useEffect(() => {
+    const inTerm = (t: EventTarget | null) => t instanceof HTMLElement && !!t.closest(".agent-term");
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      // Modal aberto = atalho desligado. O DialogHost tem um slot só: abrir um
+      // segundo diálogo por cima substituía o pedido e a promessa do primeiro
+      // nunca resolvia (rename/agendamento sumiam sem erro, e podiam voltar
+      // aplicados no workspace errado depois de uma troca).
+      const modalAberto = !!document.querySelector(".modal-backdrop:not(.batuta-backdrop)");
+      if (modalAberto) return;
+      const k = e.key.toLowerCase();
+      if (k === "k" && (e.shiftKey || !inTerm(e.target))) {
+        e.preventDefault();
+        e.stopPropagation();
+        setBatuta((b) => !b);
+      } else if (k === "s" && !e.shiftKey && !inTerm(e.target)) {
+        e.preventDefault();
+        void doSaveRef.current();
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, []);
 
   const activeName = wsId ? (workspaces.find((w) => w.id === wsId) ? folderName(workspaces.find((w) => w.id === wsId)!) : wsName) : "sem workspace";
 
@@ -587,8 +845,16 @@ export default function App() {
           <button className="ib" onClick={() => addShape("box")} title="Forma (diagrama)">{icons.shape}</button>
           <button className="ib" onClick={() => addPortal()} title="Portal (navegador)">{icons.portal}</button>
           <span className="island-sep" />
+          <button
+            className={`ib${defaultContexts.length ? " ib-accent" : ""}`}
+            onClick={() => setCtxTarget(null)}
+            title={defaultContexts.length ? `Contextos (${defaultContexts.length} padrão em agentes novos)` : "Contextos do projeto"}
+          >
+            {icons.context}
+          </button>
+          <button className="ib" onClick={() => setBatuta(true)} title="Batuta — paleta de comandos (Ctrl+K)">{icons.batuta}</button>
           <button className="ib" onClick={() => { void openEditor(activeCwd).catch((e) => alertMsg("Erro ao abrir editor", String(e))); }} title="Abrir no editor">{icons.code}</button>
-          <button className="ib" onClick={doSave} title="Salvar workspace">{icons.save}</button>
+          <button className="ib" onClick={doSave} title="Salvar workspace (Ctrl+S)">{icons.save}</button>
         </div>
         <div className="canvas">
           <ReactFlow
@@ -612,6 +878,17 @@ export default function App() {
         </div>
       </main>
       {roleTarget && <RolePicker repoPath={cwd} onApply={applyRoleToTarget} onClose={() => setRoleTarget(null)} />}
+      {ctxTarget !== undefined && (
+        <ContextPicker
+          repoPath={cwd}
+          targetLabel={ctxTarget ? String((nodes.find((n) => n.id === ctxTarget)?.data as { label?: string })?.label ?? "") : undefined}
+          defaults={defaultContexts}
+          onApply={(picked) => { if (ctxTarget) void seedContexts(ctxTarget, picked); }}
+          onDefaults={(files) => { setDefaultContexts(files); dirty(); }}
+          onClose={() => { setCtxTarget(undefined); refreshContexts(); }}
+        />
+      )}
+      {batuta && <Batuta items={batutaItems()} onClose={() => setBatuta(false)} />}
       {menu && <ContextMenu menu={menu} onClose={() => setMenu(null)} />}
       <DialogHost />
     </div>

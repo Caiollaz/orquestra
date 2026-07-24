@@ -11,10 +11,12 @@ export type AgentNodeData = {
   section: string; // cor do naipe (borda, lâmpada, handles) via --section
   exited?: boolean; // setado pelo App quando o backend emite "agent-exited"
   roleName?: string; // papel aplicado (só rótulo visual)
+  contexts?: string[]; // arquivos de contexto semeados neste agente
   scheduled?: boolean; // tem prompt agendado ativo
   onKill: (id: string) => void;
   onSend: (id: string) => void;
   onIdle: (id: string) => void;
+  onSpawn: (id: string) => void;
   onRole: (id: string) => void;
   onSchedule: (id: string) => void;
 };
@@ -36,17 +38,25 @@ function AgentNodeImpl({ id, data, selected }: NodeProps) {
           <span className="agent-lamp" />
           <span className="agent-label">{d.label}</span>
           {d.roleName && <span className="agent-role-tag">{d.roleName}</span>}
+          {!!d.contexts?.length && (
+            <span className="agent-ctx-tag" title={`contextos semeados: ${d.contexts.join(", ")}`}>
+              {d.contexts.length} ctx
+            </span>
+          )}
           {d.exited && <span className="agent-exited-tag">saiu</span>}
         </span>
         <span className="agent-actions">
-          <button className="agent-btn nodrag" title="Atribuir papel" onClick={() => d.onRole(id)}>{ni.role}</button>
+          {/* papel é prosa: num shell cada linha viraria comando — só pra claude */}
+          {d.cmd.kind === "claude" && (
+            <button className="agent-btn nodrag" title="Atribuir papel" onClick={() => d.onRole(id)}>{ni.role}</button>
+          )}
           <button className={`agent-btn nodrag${d.scheduled ? " is-on" : ""}`} title="Agendar prompt" onClick={() => d.onSchedule(id)}>{ni.clock}</button>
           <button className="agent-btn nodrag" title="Enviar seleção pros conectados" onClick={() => d.onSend(id)}>{ni.send}</button>
           <button className="agent-btn nodrag" title="Encerrar agente" onClick={() => d.onKill(id)}>{ni.x}</button>
         </span>
       </div>
       <div className="agent-term nodrag nowheel">
-        <XtermView agentId={id} cmd={d.cmd} cwd={d.cwd} onIdle={d.onIdle} />
+        <XtermView agentId={id} cmd={d.cmd} cwd={d.cwd} onIdle={d.onIdle} onSpawn={d.onSpawn} />
       </div>
     </div>
   );

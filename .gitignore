@@ -23,8 +23,12 @@ dist-ssr
 *.sln
 *.sw?
 
-# estado do orquestra por-projeto (worktrees, roles ficam versionados? não)
-.orquestra/
+# estado do orquestra por-projeto: worktrees e quadro dos agentes são voláteis.
+# Papéis e contextos são conteúdo autoral (as regras que os agentes recebem) →
+# versionados, senão cada clone do repo começa sem contexto nenhum.
+.orquestra/*
+!.orquestra/roles/
+!.orquestra/contexts/
 
 # skills instaladas via npx skills (tooling, não produto)
 .agents/
