@@ -1,5 +1,5 @@
-# Publica o frontend no GitHub Pages (demo visual — sem backend Tauri,
-# terminais não spawnam no browser). App de verdade sai pelo release.yml.
+# Publica a landing page (site/) no GitHub Pages. O app em si sai pelos
+# instaladores do release.yml — Pages é só a vitrine comercial.
 name: pages
 
 on:
@@ -25,22 +25,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm build
-
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: dist
+          path: site
 
       - id: deployment
         uses: actions/deploy-pages@v4
