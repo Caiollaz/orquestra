@@ -55,6 +55,7 @@
     /* ---- hero ------------------------------------------------ */
     header.hero {
       position: relative;
+      overflow: hidden; /* contém o brilho ambiente (hero-glow) */
       padding: 72px 0 48px;
       background:
         radial-gradient(ellipse 60% 50% at 50% 0%, rgba(198, 154, 85, 0.07), transparent),
@@ -130,12 +131,15 @@
       border-radius: 8px;
       overflow: hidden;
       box-shadow: 0 10px 32px rgba(0, 0, 0, 0.45);
-      animation: node-in 0.5s ease-out backwards;
     }
-    .node:nth-of-type(2) { animation-delay: 0.15s; }
-    .node:nth-of-type(3) { animation-delay: 0.3s; }
-    .node:nth-of-type(4) { animation-delay: 0.45s; }
-    @keyframes node-in { from { opacity: 0; transform: scale(0.96) translateY(6px); } }
+    /* pulso de mensagem viajando pelo cabo implementador → revisor */
+    .pulse { fill: var(--brass); filter: drop-shadow(0 0 4px var(--brass)); opacity: 0; }
+    /* brilho ambiente do herói (camada ambient) */
+    .hero-glow {
+      position: absolute; left: 50%; top: -80px; transform: translateX(-50%);
+      width: 620px; height: 380px; pointer-events: none; z-index: -1;
+      background: radial-gradient(ellipse 50% 50% at 50% 50%, rgba(198,154,85,0.14), transparent 70%);
+    }
 
     .node-head {
       display: flex; align-items: center; gap: 7px;
@@ -283,6 +287,7 @@
   </div>
 
   <header class="hero">
+    <span class="hero-glow" aria-hidden="true"></span>
     <div class="wrap">
       <span class="eyebrow">app desktop · linux / windows / macos · código aberto</span>
       <h1>Vários agentes claude.<br />Um maestro: <em>você.</em></h1>
@@ -302,7 +307,8 @@
         <svg class="edges" viewBox="0 0 1000 430" preserveAspectRatio="none">
           <path class="edge" d="M 300 105 C 350 105, 350 200, 400 200" />
           <path class="edge" d="M 300 314 C 350 314, 350 245, 400 245" />
-          <path class="edge" d="M 720 220 C 742 220, 738 125, 760 125" />
+          <path class="edge" id="wire" d="M 720 220 C 742 220, 738 125, 760 125" />
+          <circle class="pulse" r="4" cx="720" cy="220" />
         </svg>
 
         <div class="node note-mock" style="left: 4%; top: 10%; width: 26%; height: 30%;">
@@ -403,22 +409,86 @@ do implementador…</span></div>
     </footer>
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/ScrollTrigger.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/MotionPathPlugin.min.js"></script>
   <script>
-    // digitação no nó central — desliga com prefers-reduced-motion
+    const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const typedEl = document.getElementById("typed");
     const lines = ["Escrevendo src/export.ts…", "Rodando os testes…", "Pronto. Encaminhando pro revisor ⇢"];
-    const el = document.getElementById("typed");
-    if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      el.textContent = lines[lines.length - 1];
-    } else {
-      let li = 0, ci = 0;
+
+    // digitação no nó central; devolve promessa que resolve quando a 1ª frase termina
+    function startTyping() {
+      let li = 0, ci = 0, firstDone;
+      const done = new Promise((r) => (firstDone = r));
       (function tick() {
         if (ci <= lines[li].length) {
-          el.textContent = lines[li].slice(0, ci++);
+          typedEl.textContent = lines[li].slice(0, ci++);
           setTimeout(tick, 45);
         } else {
+          if (li === 0) firstDone();
           setTimeout(() => { li = (li + 1) % lines.length; ci = 0; tick(); }, 2200);
         }
       })();
+      return done;
+    }
+
+    // sem GSAP ou movimento reduzido: conteúdo estático, última frase pronta
+    if (reduce || !window.gsap) {
+      typedEl.textContent = lines[lines.length - 1];
+    } else {
+      const { gsap } = window;
+      gsap.registerPlugin(ScrollTrigger, MotionPathPlugin);
+      // signature easing (Premium) + paleta de durações
+      const EASE = "power3.out", QUICK = 0.3, STD = 0.5, SLOW = 0.8;
+
+      gsap.set([".eyebrow", "h1", ".sub", ".cta-row .btn", ".cta-note"], { opacity: 0, y: 24 });
+      gsap.set(".stage", { opacity: 0, y: 40 });
+      gsap.set(".stage .node", { opacity: 0, y: 16, scale: 0.96, transformOrigin: "50% 50%" });
+      gsap.set(".edges", { opacity: 0 });
+
+      // abertura do herói: entra o texto, depois o palco, depois os músicos (stagger < 500ms)
+      const intro = gsap.timeline({ defaults: { ease: EASE } });
+      intro
+        .to(".eyebrow", { opacity: 1, y: 0, duration: QUICK })
+        .to("h1", { opacity: 1, y: 0, duration: SLOW }, "-=0.1")
+        .to(".sub", { opacity: 1, y: 0, duration: STD }, "-=0.45")
+        .to(".cta-row .btn", { opacity: 1, y: 0, duration: STD, stagger: 0.08 }, "-=0.3")
+        .to(".cta-note", { opacity: 1, y: 0, duration: QUICK }, "-=0.3")
+        .to(".stage", { opacity: 1, y: 0, duration: SLOW }, "-=0.2")
+        .to(".stage .node", { opacity: 1, y: 0, scale: 1, duration: STD, stagger: 0.12 }, "-=0.4")
+        .to(".edges", { opacity: 1, duration: STD }, "-=0.2")
+        .add(() => { startTyping(); runWire(); });   // narrativa começa quando o palco está montado
+
+      // camada ambient: brilho respirando (sine, loop suave)
+      gsap.to(".hero-glow", { opacity: 0.55, scale: 1.08, duration: 4, ease: "sine.inOut", yoyo: true, repeat: -1, transformOrigin: "50% 50%" });
+
+      // micro-história: mensagem viaja o cabo implementador → revisor, em loop
+      function runWire() {
+        gsap.timeline({ repeat: -1, repeatDelay: 1.6 })
+          .fromTo(".pulse", { opacity: 0 }, { opacity: 1, duration: 0.2 })
+          .to(".pulse", { duration: 1, ease: "power1.inOut", motionPath: { path: "#wire", align: "#wire", alignOrigin: [0.5, 0.5] } }, "<")
+          .to(".pulse", { opacity: 0, duration: 0.25 });
+      }
+
+      // revelação no scroll (uma vez), cards e passos em lote com stagger
+      gsap.utils.toArray("section").forEach((sec) => {
+        gsap.from(sec.querySelectorAll(".sec-label, h2"), {
+          opacity: 0, y: 20, duration: STD, ease: EASE, stagger: 0.1,
+          scrollTrigger: { trigger: sec, start: "top 78%", once: true },
+        });
+      });
+      ScrollTrigger.batch(".naipe, .step", {
+        start: "top 85%", once: true,
+        onEnter: (els) => gsap.from(els, { opacity: 0, y: 28, duration: STD, ease: EASE, stagger: 0.1, overwrite: true }),
+      });
+      gsap.from(".dl-box", {
+        opacity: 0, y: 28, duration: STD, ease: EASE,
+        scrollTrigger: { trigger: ".dl-box", start: "top 85%", once: true },
+      });
+
+      // posições dependem da fonte carregada: recalcula os triggers
+      document.fonts.ready.then(() => ScrollTrigger.refresh());
     }
   </script>
 </body>

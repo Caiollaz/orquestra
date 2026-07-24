@@ -25,3 +25,8 @@ dist-ssr
 
 # estado do orquestra por-projeto (worktrees, roles ficam versionados? não)
 .orquestra/
+
+# skills instaladas via npx skills (tooling, não produto)
+.agents/
+.claude/
+skills-lock.json
