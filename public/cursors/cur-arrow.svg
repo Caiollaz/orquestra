@@ -1,0 +1,12 @@
+<svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+  <!-- seta estilo macOS: preta, contorno branco, sombra leve -->
+  <defs>
+    <filter id="sh" x="-40%" y="-40%" width="200%" height="200%">
+      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+  <path filter="url(#sh)"
+    d="M16 6 L16 50 L26.5 39.5 L33 54 L40.5 50.5 L34 36.5 L48 36.5 Z"
+    fill="#161616" stroke="#ffffff" stroke-width="4" stroke-linejoin="round"/>
+  <path d="M16 6 L16 50 L26.5 39.5 L33 54 L40.5 50.5 L34 36.5 L48 36.5 Z" fill="#161616"/>
+</svg>

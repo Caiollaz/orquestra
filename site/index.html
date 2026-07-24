@@ -127,7 +127,6 @@
       display: flex; flex-direction: column;
       background: var(--panel);
       border: 1px solid var(--border);
-      border-top: 2px solid var(--sec);
       border-radius: 8px;
       overflow: hidden;
       box-shadow: 0 10px 32px rgba(0, 0, 0, 0.45);
@@ -173,7 +172,7 @@
     }
     @keyframes blink { 50% { opacity: 0; } }
 
-    .node.note-mock { background: #201b12; border-color: #453a20; border-top-color: var(--note); }
+    .node.note-mock { background: #201b12; border-color: #453a20; }
     .node.note-mock .node-head { background: #2a2415; border-bottom-color: #3a3120; color: var(--note); font-style: italic; }
     .node.note-mock .node-body { background: transparent; color: #e8dfc9; }
 
@@ -199,7 +198,6 @@
     .naipe {
       background: var(--panel);
       border: 1px solid var(--border);
-      border-top: 2px solid var(--sec);
       border-radius: 10px;
       padding: 22px 20px;
     }

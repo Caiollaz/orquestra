@@ -1,6 +1,7 @@
 import { memo, type CSSProperties } from "react";
 import { NodeResizer, Handle, Position, type NodeProps } from "@xyflow/react";
 import { XtermView } from "./XtermView";
+import { ni } from "./node-icons";
 import type { AgentCmd } from "./lib/tauri";
 
 export type AgentNodeData = {
@@ -38,10 +39,10 @@ function AgentNodeImpl({ id, data, selected }: NodeProps) {
           {d.exited && <span className="agent-exited-tag">saiu</span>}
         </span>
         <span className="agent-actions">
-          <button className="agent-btn nodrag" title="Atribuir papel" onClick={() => d.onRole(id)}>◎</button>
-          <button className={`agent-btn nodrag${d.scheduled ? " is-on" : ""}`} title="Agendar prompt" onClick={() => d.onSchedule(id)}>⏱</button>
-          <button className="agent-btn nodrag" title="Enviar seleção pros conectados" onClick={() => d.onSend(id)}>⇢</button>
-          <button className="agent-btn nodrag" title="Encerrar agente" onClick={() => d.onKill(id)}>×</button>
+          <button className="agent-btn nodrag" title="Atribuir papel" onClick={() => d.onRole(id)}>{ni.role}</button>
+          <button className={`agent-btn nodrag${d.scheduled ? " is-on" : ""}`} title="Agendar prompt" onClick={() => d.onSchedule(id)}>{ni.clock}</button>
+          <button className="agent-btn nodrag" title="Enviar seleção pros conectados" onClick={() => d.onSend(id)}>{ni.send}</button>
+          <button className="agent-btn nodrag" title="Encerrar agente" onClick={() => d.onKill(id)}>{ni.x}</button>
         </span>
       </div>
       <div className="agent-term nodrag nowheel">

@@ -1,5 +1,6 @@
 import { memo, useEffect, useState } from "react";
 import { NodeResizer, Handle, Position, type NodeProps } from "@xyflow/react";
+import { ni } from "./node-icons";
 import { noteText } from "./shared";
 
 export type NoteNodeData = {
@@ -40,8 +41,8 @@ function NoteNodeImpl({ id, data, selected }: NodeProps) {
       <div className="note-head">
         <span className="note-label">contexto</span>
         <span className="agent-actions">
-          <button className="agent-btn nodrag" title="Injetar texto nos conectados" onClick={() => d.onSend(id)}>⇢</button>
-          <button className="agent-btn nodrag" title="Remover bloco" onClick={() => d.onKill(id)}>×</button>
+          <button className="agent-btn nodrag" title="Injetar texto nos conectados" onClick={() => d.onSend(id)}>{ni.send}</button>
+          <button className="agent-btn nodrag" title="Remover bloco" onClick={() => d.onKill(id)}>{ni.x}</button>
         </span>
       </div>
       <textarea

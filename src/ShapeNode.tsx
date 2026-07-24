@@ -1,5 +1,6 @@
 import { memo, useState } from "react";
 import { NodeResizer, Handle, Position, type NodeProps } from "@xyflow/react";
+import { ni } from "./node-icons";
 
 export type ShapeNodeData = {
   label: string;
@@ -24,7 +25,7 @@ function ShapeNodeImpl({ id, data, selected }: NodeProps) {
       {sides.map((p) => (
         <Handle key={`s-${p}`} id={`s-${p}`} type="source" position={p} className="shape-handle" />
       ))}
-      <button className="shape-x nodrag" title="Remover" onClick={() => d.onKill(id)}>×</button>
+      <button className="shape-x nodrag" title="Remover" onClick={() => d.onKill(id)}>{ni.x}</button>
       {editing ? (
         <input
           className="shape-input nodrag"

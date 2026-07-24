@@ -96,7 +96,26 @@ export default function App() {
 
   const onNodesChange = useCallback((c: NodeChange[]) => setNodes((ns) => applyNodeChanges(c, ns)), []);
   const onEdgesChange = useCallback((c: EdgeChange[]) => setEdges((es) => applyEdgeChanges(c, es)), []);
-  const onConnect = useCallback((c: Connection) => setEdges((es) => addEdge(c, es)), []);
+
+  // ao ligar uma aresta, avisa o claude de origem quem é o alvo (senão ele não
+  // sabe o label e executa tudo nele mesmo em vez de delegar)
+  const onConnect = useCallback((c: Connection) => {
+    setEdges((es) => addEdge(c, es));
+    const src = nodesRef.current.find((n) => n.id === c.source);
+    const tgt = nodesRef.current.find((n) => n.id === c.target);
+    if (!src || !tgt) return;
+    const sd = src.data as AgentNodeData;
+    if (src.type !== "agent" || sd.cmd.kind !== "claude") return;
+    const kind =
+      tgt.type === "note" ? "uma nota — escreva nela com ⇢nota: texto"
+      : tgt.type === "portal" ? `um navegador — ⇢${(tgt.data as PortalNodeData).label}: URL navega o navegador até a URL`
+      : tgt.type !== "agent" ? "uma forma de diagrama (sem interação)"
+      : (tgt.data as AgentNodeData).cmd.kind === "shell"
+        ? `um terminal shell — ⇢${(tgt.data as AgentNodeData).label}: comando executa o comando LÁ, não rode você mesmo`
+        : `um agente claude — fale com ele via ⇢${(tgt.data as AgentNodeData).label}: mensagem`;
+    const label = tgt.type === "note" ? "nota" : (tgt.data as { label?: string }).label ?? tgt.id;
+    void forwardOutput(c.source, `(sistema) você foi conectado ao nó "${label}": ${kind}. Responda apenas OK.`).catch(() => {});
+  }, []);
 
   const flashTimers = useRef(new Map<string, number>());
   const flashEdge = useCallback((source: string, target: string) => {
@@ -139,7 +158,7 @@ export default function App() {
   }, []);
 
   const seedPrompt = (label: string) =>
-    `Você é o nó "${label}" num canvas do orquestra, junto com outros agentes. Mensagens de outros chegam como "(de nome) texto". Para falar com um agente conectado a você, escreva uma linha própria no formato ⇢NOME: mensagem — NOME é o título do nó de destino, ou a palavra todos para mandar a todos os conectados. Para registrar algo numa nota conectada, escreva ⇢nota: texto. Alinhamento: mantenha o quadro .orquestra/board.md na raiz do projeto — registre nele suas ações, decisões e status, e consulte-o antes de cada tarefa nova. Responda apenas OK.`;
+    `Você é o nó "${label}" num canvas do orquestra, junto com outros agentes. Mensagens de outros chegam como "(de nome) texto". Para falar com um nó conectado a você, escreva uma linha própria no formato ⇢NOME: texto — NOME é o título do nó de destino, ou a palavra todos para todos os conectados. Se o nó conectado for um terminal shell, ⇢NOME: comando digita e executa o comando NAQUELE terminal — quando o usuário pedir para rodar algo "no terminal", delegue assim, não execute você mesmo. Para registrar algo numa nota conectada, escreva ⇢nota: texto. Você será avisado com "(sistema) ..." quando novas conexões forem criadas. Alinhamento: mantenha o quadro .orquestra/board.md na raiz do projeto — registre nele suas ações, decisões e status, e consulte-o antes de cada tarefa nova. Responda apenas OK.`;
 
   const handleIdle = useCallback((id: string) => {
     const node = nodesRef.current.find((n) => n.id === id);
@@ -168,8 +187,21 @@ export default function App() {
       const wanted =
         dest === "todos"
           ? targets
-          : targets.filter((t) => (nodesRef.current.find((n) => n.id === t)?.data as AgentNodeData | undefined)?.label === dest);
-      wanted.forEach((t) => { flashEdge(id, t); void forwardOutput(t, `(de ${d.label}) ${msg}`).catch(() => {}); });
+          : targets.filter((t) => (nodesRef.current.find((n) => n.id === t)?.data as { label?: string } | undefined)?.label === dest);
+      wanted.forEach((t) => {
+        const tn = nodesRef.current.find((n) => n.id === t);
+        if (!tn) return;
+        flashEdge(id, t);
+        // portal não tem PTY: a mensagem é uma URL → navega
+        if (tn.type === "portal") {
+          const u = msg.trim().replace(/^<|>$/g, "");
+          setPortalUrl(t, /^https?:\/\//.test(u) ? u : `https://${u}`);
+          return;
+        }
+        // Shell recebe o texto CRU: o prefixo "(de X)" viraria comando inválido.
+        const isShell = tn.type === "agent" && (tn.data as AgentNodeData).cmd.kind === "shell";
+        void forwardOutput(t, isShell ? msg : `(de ${d.label}) ${msg}`).catch(() => {});
+      });
     }
   }, [readNewLines, flashEdge]);
 
@@ -220,9 +252,21 @@ export default function App() {
   // posição padrão em grade quando não vem do menu de contexto
   const gridPos = (len: number): XYPosition => ({ x: 60 + (len % 3) * 520, y: 60 + Math.floor(len / 3) * 380 });
 
+  // rótulo por tipo, contando só o canvas atual: workspace novo começa em claude-1
+  // (seq global continua garantindo ids únicos, mas não vaza pro rótulo)
+  const nextLabel = (base: string) => {
+    let max = 0;
+    for (const n of nodesRef.current) {
+      const l = (n.data as { label?: string }).label;
+      const m = l?.match(new RegExp(`^${base}-(\\d+)$`));
+      if (m) max = Math.max(max, Number(m[1]));
+    }
+    return `${base}-${max + 1}`;
+  };
+
   const addAgent = (cmd: AgentCmd, label: string, pos?: XYPosition) => {
     const id = `agent-${++seq}`;
-    const data = agentData(`${label}-${seq}`, cmd, SECTIONS[seq % SECTIONS.length]);
+    const data = agentData(nextLabel(label), cmd, SECTIONS[seq % SECTIONS.length]);
     setNodes((ns) => [...ns, { id, type: "agent", position: pos ?? gridPos(ns.length), width: 480, height: 320, data }]);
   };
   const addNote = (pos?: XYPosition) => {
@@ -243,7 +287,7 @@ export default function App() {
   }, []);
   const addPortal = (pos?: XYPosition) => {
     const id = `portal-${++seq}`;
-    const data: PortalNodeData = { url: "", onKill: killNode, onUrl: setPortalUrl };
+    const data: PortalNodeData = { label: nextLabel("portal"), url: "", onKill: killNode, onUrl: setPortalUrl };
     setNodes((ns) => [...ns, { id, type: "portal", position: pos ?? { x: 80, y: 80 }, width: 420, height: 320, data }]);
   };
 
@@ -416,21 +460,26 @@ export default function App() {
           </span>
           <span className="island-sep" />
           <button
-            className="island-floor"
-            title="Floor ativo (worktree)"
+            className={`ib${activeFloor ? " ib-accent" : ""}`}
+            title={activeFloor ? `Floor ativo: ${activeFloor}` : "Floors (git worktree)"}
             onClick={(e) => {
               const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-              const items: MenuItem[] = [
-                { label: activeFloor ? "raiz" : "✓ raiz", icon: icons.folder, onClick: () => setActiveFloor("") },
-                ...floors.map((f) => ({ label: `${activeFloor === f.slug ? "✓ " : ""}${f.slug}`, icon: icons.layers, onClick: () => setActiveFloor(f.slug) })),
-              ];
-              if (activeFloor) items.push({ sep: true }, { label: `Remover "${activeFloor}"`, danger: true, icon: icons.trash, onClick: () => dropFloor(activeFloor) });
-              setMenu({ x: r.left, y: r.bottom + 6, items });
+              const items: MenuItem[] = [];
+              // só lista "raiz"/floors quando há floor pra escolher
+              if (floors.length) {
+                items.push(
+                  { label: activeFloor ? "raiz" : "✓ raiz", icon: icons.folder, onClick: () => setActiveFloor("") },
+                  ...floors.map((f) => ({ label: `${activeFloor === f.slug ? "✓ " : ""}${f.slug}`, icon: icons.layers, onClick: () => setActiveFloor(f.slug) })),
+                  { sep: true } as MenuItem,
+                );
+              }
+              items.push({ label: "Novo floor…", icon: icons.layers, onClick: addFloor });
+              if (activeFloor) items.push({ label: `Remover "${activeFloor}"`, danger: true, icon: icons.trash, onClick: () => dropFloor(activeFloor) });
+              setMenu({ x: r.left, y: r.bottom + 8, items });
             }}
           >
-            {activeFloor ? `⌥ ${activeFloor}` : "raiz"}
+            {icons.layers}
           </button>
-          <button className="ib" onClick={addFloor} title="Criar floor (git worktree)">{icons.layers}</button>
           <span className="island-sep" />
           <button className="ib" onClick={() => addAgent({ kind: "shell", program: null }, "shell")} title="Terminal shell">{icons.shell}</button>
           <button className="ib ib-accent" onClick={() => addAgent({ kind: "claude", extra_args: [] }, "claude")} title="Agente claude">{icons.claude}</button>

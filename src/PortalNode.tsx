@@ -1,7 +1,9 @@
 import { memo, useState } from "react";
 import { NodeResizer, Handle, Position, type NodeProps } from "@xyflow/react";
+import { ni } from "./node-icons";
 
 export type PortalNodeData = {
+  label: string; // endereço nas mensagens ⇢NOME: (claude conectado navega o portal)
   url: string;
   onKill: (id: string) => void;
   onUrl: (id: string, url: string) => void;
@@ -25,6 +27,7 @@ function PortalNodeImpl({ id, data, selected }: NodeProps) {
       <Handle type="target" position={Position.Left} />
       <Handle type="source" position={Position.Right} />
       <div className="portal-head">
+        <span className="portal-label">{d.label}</span>
         <input
           className="portal-url nodrag"
           value={draft}
@@ -33,8 +36,8 @@ function PortalNodeImpl({ id, data, selected }: NodeProps) {
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") go(); }}
         />
-        <button className="agent-btn nodrag" title="Ir" onClick={go}>↵</button>
-        <button className="agent-btn nodrag" title="Remover" onClick={() => d.onKill(id)}>×</button>
+        <button className="agent-btn nodrag" title="Ir" onClick={go}>{ni.enter}</button>
+        <button className="agent-btn nodrag" title="Remover" onClick={() => d.onKill(id)}>{ni.x}</button>
       </div>
       {d.url ? (
         <iframe className="portal-frame nodrag nowheel" src={d.url} title={`portal-${id}`} sandbox="allow-scripts allow-same-origin allow-forms" />
