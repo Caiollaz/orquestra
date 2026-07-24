@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { open } from "@tauri-apps/plugin-dialog";
 import {
   ReactFlow,
   Background,
@@ -27,6 +28,33 @@ let seq = 0;
 // naipes da orquestra: cada agente novo pega a próxima cor (latão, cordas,
 // madeiras, percussão) — identidade visual pra distinguir nós de relance
 const SECTIONS = ["#c69a55", "#b3543f", "#6f8f5e", "#7d8fa8"];
+
+// ícones inline (16px, stroke herda a cor do botão)
+const icons = {
+  folder: (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M4 5a2 2 0 0 1 2-2h3.2a2 2 0 0 1 1.4.6L12 5h6a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z" />
+    </svg>
+  ),
+  shell: (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <rect x="2" y="3" width="20" height="18" rx="2" />
+      <path d="m6 9 4 3-4 3" />
+      <path d="M12 16h5" />
+    </svg>
+  ),
+  claude: (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+      <path d="M12 2l1.8 6.6L19 4.9l-3.6 5.7L22 12l-6.6 1.4L19 19.1l-5.2-3.7L12 22l-1.8-6.6L5 19.1l3.6-5.7L2 12l6.6-1.4L5 4.9l5.2 3.7Z" />
+    </svg>
+  ),
+  note: (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M5 3h14a1 1 0 0 1 1 1v10l-6 6H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z" />
+      <path d="M14 20v-5a1 1 0 0 1 1-1h5" />
+    </svg>
+  ),
+};
 
 export default function App() {
   const [cwd, setCwd] = useState("/home/ti-17");
@@ -81,14 +109,22 @@ export default function App() {
     ]);
   };
 
+  // dialog nativo de pasta; cancelou → mantém o cwd atual
+  const pickFolder = async () => {
+    const dir = await open({ directory: true, defaultPath: cwd }).catch(() => null);
+    if (typeof dir === "string") setCwd(dir);
+  };
+
   return (
     <div className="app">
       <header className="topbar">
         <span className="brand">or<span className="brand-q">q</span>uestra</span>
         <input className="cwd" value={cwd} onChange={(e) => setCwd(e.target.value)} spellCheck={false} placeholder="pasta do projeto" />
-        <button onClick={() => addAgent({ kind: "shell", program: null }, "shell")}>+ shell</button>
-        <button onClick={() => addAgent({ kind: "claude", extra_args: [] }, "claude")}>+ claude</button>
-        <button onClick={addNote}>+ contexto</button>
+        <button onClick={pickFolder} title="Escolher a pasta do projeto">{icons.folder} abrir pasta</button>
+        <span className="topbar-sep" />
+        <button onClick={() => addAgent({ kind: "shell", program: null }, "shell")} title="Novo terminal shell">{icons.shell} shell</button>
+        <button className="btn-claude" onClick={() => addAgent({ kind: "claude", extra_args: [] }, "claude")} title="Novo agente claude">{icons.claude} claude</button>
+        <button onClick={addNote} title="Novo bloco de contexto">{icons.note} contexto</button>
       </header>
       <div className="canvas">
         <ReactFlow
