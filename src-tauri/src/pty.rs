@@ -55,8 +55,14 @@ pub(crate) fn augmented_path() -> String {
     {
         if let Some(home) = std::env::var_os("HOME") {
             let home = std::path::PathBuf::from(home);
-            for suf in [".local/bin", ".cargo/bin", ".bun/bin", ".deno/bin", "bin"] {
+            for suf in [".local/bin", ".cargo/bin", ".bun/bin", ".deno/bin", ".volta/bin", ".local/share/pnpm", "bin"] {
                 parts.push(home.join(suf));
+            }
+            // node via nvm: o rc do shell (que faz nvm funcionar) não roda em app
+            // GUI nem em /bin/sh dos subprocessos → injeta o bin da versão mais
+            // nova direto ("node: not found" nos filhos do claude sem isso)
+            if let Some(bin) = newest_nvm_bin(&home) {
+                parts.push(bin);
             }
         }
         for d in ["/usr/local/bin", "/opt/homebrew/bin", "/usr/bin", "/bin"] {
@@ -82,6 +88,24 @@ pub(crate) fn augmented_path() -> String {
     let mut seen = std::collections::HashSet::new();
     parts.retain(|p| seen.insert(p.clone()));
     std::env::join_paths(parts).map(|p| p.to_string_lossy().into_owned()).unwrap_or_default()
+}
+
+/// Bin da versão de node mais nova instalada pelo nvm (~/.nvm/versions/node/vX.Y.Z/bin).
+/// Ordena semanticamente (v9 < v20 — lexicográfico erraria).
+#[cfg(not(windows))]
+fn newest_nvm_bin(home: &std::path::Path) -> Option<std::path::PathBuf> {
+    let dir = home.join(".nvm").join("versions").join("node");
+    let key = |name: &str| -> (u64, u64, u64) {
+        let mut it = name.trim_start_matches('v').splitn(3, '.');
+        let mut n = || it.next().and_then(|s| s.parse().ok()).unwrap_or(0);
+        (n(), n(), n())
+    };
+    std::fs::read_dir(&dir)
+        .ok()?
+        .flatten()
+        .filter_map(|e| e.file_name().into_string().ok())
+        .max_by_key(|name| key(name))
+        .map(|name| dir.join(name).join("bin"))
 }
 
 /// Extensões executáveis a testar ao resolver um nome sem extensão.
@@ -288,5 +312,18 @@ mod tests {
         assert!(sh.starts_with('/') && std::path::Path::new(&sh).is_file(), "resolveu: {sh}");
         // nome inexistente cai de volta pro próprio nome (erro aparece no spawn/terminal)
         assert_eq!(resolve_program("binario-que-nao-existe-xyz", &augmented_path()), "binario-que-nao-existe-xyz");
+    }
+
+    #[test]
+    fn nvm_no_path() {
+        // se o usuário tem nvm, o node dele precisa resolver pelo PATH aumentado
+        // (subprocessos do claude rodam /bin/sh sem o rc do shell)
+        let home = match std::env::var("HOME") { Ok(h) => h, Err(_) => return };
+        let nvm = std::path::Path::new(&home).join(".nvm/versions/node");
+        if !nvm.exists() { return; } // sem nvm no ambiente → pula
+        let path = augmented_path();
+        assert!(path.contains(".nvm/versions/node"), "PATH sem nvm: {path}");
+        let node = resolve_program("node", &path);
+        assert!(std::path::Path::new(&node).is_file(), "node não resolveu: {node}");
     }
 }

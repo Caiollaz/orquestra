@@ -62,41 +62,44 @@ pub fn render_template(body: &str, vars: &HashMap<String, String>) -> String {
     out
 }
 
+/// Separa frontmatter YAML simples (`chave: valor`) do corpo. Sem `---` de
+/// abertura (ou sem fechamento) devolve mapa vazio e o raw inteiro como corpo.
+/// Compartilhado com contexts.rs — os dois formatos são o mesmo markdown.
+pub(crate) fn split_frontmatter(raw: &str) -> (HashMap<String, String>, &str) {
+    let trimmed = raw.trim_start();
+    let mut fm = HashMap::new();
+    let Some(rest) = trimmed.strip_prefix("---") else { return (fm, trimmed) };
+    let Some(end) = rest.find("\n---") else { return (fm, trimmed) };
+    for line in rest[..end].lines() {
+        if let Some((k, v)) = line.trim().split_once(':') {
+            let v = v.trim().trim_matches('"').trim_matches('\'');
+            fm.insert(k.trim().to_string(), v.to_string());
+        }
+    }
+    (fm, rest[end + 4..].trim_start_matches('\n'))
+}
+
 /// Parse de frontmatter YAML simples (só chaves name/agent/description) + corpo.
 pub fn parse_role(file: &str, raw: &str) -> Role {
     let base = file.trim_end_matches(".md").to_string();
-    let mut name = base.clone();
-    let mut agent = base.clone();
-    let mut description = String::new();
-    let mut body = raw.trim_start();
-
-    if let Some(rest) = body.strip_prefix("---") {
-        // acha o fim do bloco frontmatter (próxima linha "---")
-        if let Some(end) = rest.find("\n---") {
-            let fm = &rest[..end];
-            body = rest[end + 4..].trim_start_matches('\n');
-            for line in fm.lines() {
-                let line = line.trim();
-                if let Some((k, v)) = line.split_once(':') {
-                    let v = v.trim().trim_matches('"').trim_matches('\'').to_string();
-                    match k.trim() {
-                        "name" => name = v,
-                        "agent" => agent = v,
-                        "description" => description = v,
-                        _ => {}
-                    }
-                }
-            }
-        }
+    let (fm, body) = split_frontmatter(raw);
+    let pick = |k: &str, fallback: &str| fm.get(k).cloned().unwrap_or_else(|| fallback.to_string());
+    Role {
+        file: file.to_string(),
+        name: pick("name", &base),
+        agent: pick("agent", &base),
+        description: pick("description", ""),
+        body: body.trim().to_string(),
     }
-    Role { file: file.to_string(), name, agent, description, body: body.trim().to_string() }
 }
 
-fn file_ok(file: &str) -> Result<(), String> {
+/// Valida nome de arquivo vindo do front antes de tocar o disco: só
+/// `[a-z0-9-].md`. Barra `../`, caminho absoluto e qualquer travessia.
+pub(crate) fn file_ok(file: &str) -> Result<(), String> {
     let ok = !file.is_empty()
         && file.ends_with(".md")
         && file[..file.len() - 3].chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
-    if ok { Ok(()) } else { Err(format!("nome de papel inválido: {file}")) }
+    if ok { Ok(()) } else { Err(format!("nome de arquivo inválido: {file}")) }
 }
 
 #[tauri::command]
@@ -193,5 +196,23 @@ mod tests {
         assert_eq!(r.name, "livre");
         assert_eq!(r.agent, "livre");
         assert_eq!(r.body, "só corpo, sem fm");
+    }
+
+    #[test]
+    fn file_ok_barra_travessia() {
+        assert!(file_ok("po.md").is_ok());
+        assert!(file_ok("papel-2.md").is_ok());
+        // travessia, caminho absoluto, extensão errada e maiúsculas: recusados
+        for bad in ["../../etc/passwd.md", "/etc/passwd.md", "a/b.md", "po.txt", "PO.md", ".md", ""] {
+            assert!(file_ok(bad).is_err(), "deveria recusar: {bad}");
+        }
+    }
+
+    #[test]
+    fn frontmatter_sem_fechamento_vira_corpo() {
+        // `---` aberto e nunca fechado não pode engolir o arquivo inteiro
+        let r = parse_role("x.md", "---\nname: Y\nsem fechamento");
+        assert_eq!(r.name, "x");
+        assert!(r.body.contains("sem fechamento"));
     }
 }
