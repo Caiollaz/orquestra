@@ -4,26 +4,22 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>orquestra — reja seus agentes de código</title>
-  <meta name="description" content="App desktop com um canvas infinito de terminais interativos. Crie agentes claude, conecte um ao outro e faça eles se coordenarem sozinhos." />
+  <meta name="description" content="App desktop com um canvas infinito de terminais interativos. Crie agentes claude, dê papéis, isole cada um num worktree e faça eles conversarem." />
   <meta property="og:title" content="orquestra — reja seus agentes de código" />
   <meta property="og:description" content="Um canvas. Vários agentes claude. Você no pódio." />
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23131110'/%3E%3Ccircle cx='16' cy='16' r='7' fill='none' stroke='%23c69a55' stroke-width='2.5'/%3E%3Cline x1='21' y1='21' x2='26' y2='26' stroke='%23c69a55' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,300;0,400;0,500;0,600;0,800;1,300;1,400;1,800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,300;0,400;0,600;0,800;1,300;1,400;1,800&display=swap" rel="stylesheet" />
   <style>
     :root {
-      --bg: #0f0d0c;          /* fundo da página (mais escuro que o painel) */
-      --frame: #1a1613;       /* moldura da janela do app */
-      --panel: #14110f;       /* tela do app (painel interno) */
-      --card: #1c1917;
-      --card-2: #252120;
+      --bg: #131110;
+      --panel: #1c1917;
+      --panel-2: #252120;
       --border: #322c28;
-      --border-soft: #292420;
       --text: #eae4da;
       --muted: #9c9186;
       --brass: #c69a55;
-      --brass-hi: #dcb069;
       --brass-dim: #8a744f;
       --strings: #b3543f;
       --woods: #6f8f5e;
@@ -39,316 +35,313 @@
       color: var(--text);
       font: 400 15px/1.65 var(--mono);
       -webkit-font-smoothing: antialiased;
-      padding: 18px;
     }
     a { color: inherit; }
-    button { font: inherit; color: inherit; cursor: pointer; }
-    :focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; border-radius: 4px; }
+    :focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
 
-    /* ============ moldura = janela do app orquestra ============ */
-    .frame {
-      max-width: 1240px; margin: 0 auto;
-      background: var(--frame);
-      border: 1px solid var(--border);
-      border-radius: 20px;
-      padding: 14px;
-      box-shadow: 0 40px 120px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.03);
-    }
+    .wrap { max-width: 1060px; margin: 0 auto; padding: 0 24px; }
 
-    /* barra de título da janela */
-    .titlebar {
-      display: flex; align-items: center; gap: 16px;
-      padding: 6px 12px 16px;
+    /* ---- nav ------------------------------------------------- */
+    nav {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 22px 0;
     }
-    .traffic { display: inline-flex; gap: 7px; }
-    .traffic i { width: 11px; height: 11px; border-radius: 50%; background: var(--border); }
-    .traffic i:first-child { background: #b3543f; }
-    .wordmark { font-weight: 600; letter-spacing: 0.14em; font-size: 14px; text-decoration: none; }
+    .wordmark { font-weight: 600; letter-spacing: 0.14em; font-size: 15px; text-decoration: none; }
     .wordmark em { color: var(--brass); font-style: italic; }
-    .nav-links { margin-left: auto; display: flex; align-items: center; gap: 24px; font-size: 13px; }
-    .nav-links a { color: var(--muted); text-decoration: none; white-space: nowrap; transition: color .15s; }
+    .nav-links { display: flex; gap: 22px; font-size: 13px; }
+    .nav-links a { color: var(--muted); text-decoration: none; white-space: nowrap; }
     .nav-links a:hover { color: var(--text); }
-    .nav-cta {
-      background: var(--brass); color: #1a1509; text-decoration: none;
-      padding: 8px 16px; border-radius: 8px; font-weight: 600; font-size: 13px;
-      transition: background .15s, transform .15s;
-    }
-    .nav-cta:hover { background: var(--brass-hi); transform: translateY(-1px); }
 
-    /* tela interna */
-    .screen {
-      position: relative; overflow: hidden;
-      background: var(--panel);
-      border: 1px solid var(--border-soft);
-      border-radius: 12px;
-      background-image: radial-gradient(circle, #221e1a 1.1px, transparent 1.1px);
-      background-size: 24px 24px;
+    /* ---- hero ------------------------------------------------ */
+    header.hero {
+      position: relative;
+      overflow: hidden; /* contém o brilho ambiente (hero-glow) */
+      padding: 72px 0 48px;
+      background:
+        radial-gradient(ellipse 60% 50% at 50% 0%, rgba(198, 154, 85, 0.07), transparent),
+        radial-gradient(circle, #302a25 1.2px, transparent 1.2px);
+      background-size: auto, 26px 26px;
     }
-    .hero-glow {
-      position: absolute; right: -6%; top: -12%; width: 720px; height: 520px;
-      pointer-events: none; z-index: 0;
-      background: radial-gradient(ellipse 50% 50% at 60% 40%, rgba(198,154,85,0.13), transparent 70%);
+    .eyebrow {
+      display: inline-block;
+      font-size: 12px; letter-spacing: 0.12em;
+      color: var(--brass);
+      border: 1px solid var(--brass-dim);
+      border-radius: 999px;
+      padding: 4px 14px;
+      margin-bottom: 28px;
     }
-
-    /* ============ herói: 2 colunas ============ */
-    .hero {
-      position: relative; z-index: 1;
-      display: grid; grid-template-columns: 1.05fr 0.95fr;
-      gap: 40px; align-items: center;
-      padding: 60px 56px 64px;
-    }
-    .badge {
-      display: inline-flex; align-items: center; gap: 8px;
-      font-size: 12px; color: var(--muted); margin-bottom: 26px;
-    }
-    .badge b { color: var(--text); font-weight: 600; }
-    .badge .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--woods); box-shadow: 0 0 8px var(--woods); }
-
     h1 {
-      font-size: clamp(52px, 9vw, 118px);
-      line-height: 0.92; font-weight: 800; letter-spacing: -0.05em;
-      margin-bottom: 4px;
+      font-size: clamp(29px, 6.5vw, 58px);
+      line-height: 1.12;
+      font-weight: 800;
+      letter-spacing: -0.03em;
     }
-    h1 em { font-style: italic; font-weight: 300; color: var(--brass); }
-    .tagline {
-      font-size: clamp(15px, 1.5vw, 18px); font-weight: 500;
-      letter-spacing: -0.01em; margin: 20px 0 0; max-width: 42ch;
+    h1 em { font-style: italic; font-weight: 300; color: var(--brass); letter-spacing: 0; }
+    .sub {
+      margin-top: 22px;
+      max-width: 58ch;
+      color: var(--muted);
+      font-size: 15px;
     }
-    .sub { margin-top: 14px; max-width: 46ch; color: var(--muted); font-size: 14px; }
     .sub strong { color: var(--text); font-weight: 600; }
-
-    .cta-row { display: flex; align-items: center; gap: 20px; margin-top: 34px; flex-wrap: wrap; }
-    .btn-brass {
-      background: var(--brass); color: #1a1509; text-decoration: none;
-      padding: 13px 26px; border-radius: 999px; font-weight: 600; font-size: 14px;
-      transition: background .15s, transform .15s, box-shadow .15s;
-      box-shadow: 0 6px 20px rgba(198,154,85,0.18);
+    .cta-row { display: flex; gap: 14px; margin-top: 34px; flex-wrap: wrap; }
+    .btn {
+      display: inline-block;
+      padding: 12px 22px;
+      border-radius: 8px;
+      text-decoration: none;
+      font-weight: 600; font-size: 14px;
+      letter-spacing: 0.02em;
     }
-    .btn-brass:hover { background: var(--brass-hi); transform: translateY(-2px); box-shadow: 0 10px 28px rgba(198,154,85,0.28); }
-    .btn-link { color: var(--text); text-decoration: none; font-size: 14px; display: inline-flex; align-items: center; gap: 6px; }
-    .btn-link .arw { transition: transform .15s; }
-    .btn-link:hover .arw { transform: translate(3px,-3px); }
-    .rating { display: flex; align-items: center; gap: 10px; margin-top: 26px; font-size: 12px; color: var(--muted); }
-    .rating .stars { color: var(--brass); letter-spacing: 2px; }
+    .btn-brass { background: var(--brass); color: #1a1509; }
+    .btn-brass:hover { background: #d8ad66; }
+    .btn-ghost { border: 1px solid var(--border); color: var(--text); }
+    .btn-ghost:hover { border-color: var(--brass-dim); background: var(--panel); }
+    .cta-note { margin-top: 14px; font-size: 12px; color: var(--muted); }
 
-    /* ============ palco interativo (coluna direita) ============ */
-    .stage-col { position: relative; }
-
-    /* seletor de cena — pills clicáveis */
-    .scenes { display: inline-flex; gap: 6px; padding: 5px; margin-bottom: 16px;
-      background: var(--card); border: 1px solid var(--border-soft); border-radius: 999px; }
-    .scene-btn {
-      display: inline-flex; align-items: center; gap: 7px;
-      background: transparent; border: none; color: var(--muted);
-      padding: 7px 15px; border-radius: 999px; font-size: 12.5px; font-weight: 500;
-      transition: background .18s, color .18s;
-    }
-    .scene-btn .lamp { width: 7px; height: 7px; border-radius: 50%; background: currentColor; opacity: .6; }
-    .scene-btn[aria-selected="true"] { background: var(--card-2); color: var(--text); }
-    .scene-btn[aria-selected="true"] .lamp { background: var(--sec); opacity: 1; box-shadow: 0 0 7px var(--sec); }
-    .scene-btn:hover:not([aria-selected="true"]) { color: var(--text); }
-
+    /* ---- mock do canvas -------------------------------------- */
     .stage {
-      position: relative; height: 360px;
-      border: 1px solid var(--border-soft); border-radius: 12px;
-      background: #100d0b;
-      background-image: radial-gradient(circle, #221e1a 1px, transparent 1px);
-      background-size: 22px 22px;
+      position: relative;
+      margin: 64px auto 0;
+      height: 430px;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background:
+        radial-gradient(circle, #2a2520 1.2px, transparent 1.2px);
+      background-size: 26px 26px;
+      background-color: #161311;
       overflow: hidden;
+      box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5);
     }
-    .stage svg.edges { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 1; }
-    .edge { fill: none; stroke: var(--brass-dim); stroke-width: 1.5; stroke-dasharray: 5 5; animation: flow 1.1s linear infinite; }
-    @keyframes flow { to { stroke-dashoffset: -10; } }
-    .pulse { fill: var(--brass); filter: drop-shadow(0 0 4px var(--brass)); opacity: 0; }
+    .stage svg.edges { position: absolute; inset: 0; width: 100%; height: 100%; }
+    .edge {
+      fill: none; stroke: var(--brass-dim); stroke-width: 1.5;
+      stroke-dasharray: 6 5;
+      animation: flow 1.2s linear infinite;
+    }
+    @keyframes flow { to { stroke-dashoffset: -11; } }
 
     .node {
-      position: absolute; z-index: 2;
+      position: absolute;
       display: flex; flex-direction: column;
-      background: var(--card); border: 1px solid var(--border);
-      border-top: 2px solid var(--sec); border-radius: 8px; overflow: hidden;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-      transition: transform .2s cubic-bezier(0.4,0,0.2,1), box-shadow .2s, border-color .2s, opacity .3s;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-top: 2px solid var(--sec);
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 10px 32px rgba(0, 0, 0, 0.45);
     }
-    /* interação real de mouse: nó sobe e brilha no hover */
-    .node:hover { transform: translateY(-5px) scale(1.02); box-shadow: 0 18px 40px rgba(0,0,0,0.6); border-color: var(--sec); z-index: 5; }
-    /* nó fora da cena selecionada esmaece */
-    .stage[data-scene] .node { opacity: .32; filter: saturate(.5); }
-    .stage[data-scene="all"] .node,
-    .stage[data-scene="contexto"] .node[data-role="contexto"],
-    .stage[data-scene="claude"] .node[data-role="claude"],
-    .stage[data-scene="shell"] .node[data-role="shell"] { opacity: 1; filter: none; }
+    /* pulso de mensagem viajando pelo cabo implementador → revisor */
+    .pulse { fill: var(--brass); filter: drop-shadow(0 0 4px var(--brass)); opacity: 0; }
+    /* brilho ambiente do herói (camada ambient) */
+    .hero-glow {
+      position: absolute; left: 50%; top: -80px; transform: translateX(-50%);
+      width: 620px; height: 380px; pointer-events: none; z-index: -1;
+      background: radial-gradient(ellipse 50% 50% at 50% 50%, rgba(198,154,85,0.14), transparent 70%);
+    }
 
     .node-head {
-      display: flex; align-items: center; gap: 7px; padding: 6px 10px;
-      background: var(--card-2); border-bottom: 1px solid var(--border-soft);
-      font-size: 11px; font-weight: 600; letter-spacing: .03em; color: var(--muted);
+      display: flex; align-items: center; gap: 7px;
+      padding: 6px 10px;
+      background: var(--panel-2);
+      border-bottom: 1px solid #292420;
+      font-size: 11px; font-weight: 600; letter-spacing: 0.04em;
+      color: var(--muted);
     }
-    .lamp { width: 7px; height: 7px; border-radius: 50%; background: var(--sec); box-shadow: 0 0 6px var(--sec); flex: none; }
-    .node-body { flex: 1; padding: 9px 11px; background: #14110f; font-size: 11.5px; line-height: 1.55; color: #d8d0c4; white-space: pre-wrap; }
-    .node-body .dim { color: #6b6259; } .node-body .ok { color: #8fa876; } .node-body .brass { color: var(--brass); }
-    .cursor { display: inline-block; width: 7px; height: 13px; background: var(--brass); vertical-align: -2px; animation: blink 1.1s steps(1) infinite; }
+    .lamp {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--sec);
+      box-shadow: 0 0 6px var(--sec);
+    }
+    .node-body {
+      flex: 1;
+      padding: 9px 11px;
+      background: #14110f;
+      font-size: 11.5px; line-height: 1.55;
+      color: #d8d0c4;
+      white-space: pre-wrap;
+    }
+    .node-body .dim { color: #6b6259; }
+    .node-body .ok { color: #8fa876; }
+    .node-body .brass { color: var(--brass); }
+    .cursor {
+      display: inline-block; width: 7px; height: 13px;
+      background: var(--brass);
+      vertical-align: -2px;
+      animation: blink 1.1s steps(1) infinite;
+    }
     @keyframes blink { 50% { opacity: 0; } }
+
     .node.note-mock { background: #201b12; border-color: #453a20; border-top-color: var(--note); }
     .node.note-mock .node-head { background: #2a2415; border-bottom-color: #3a3120; color: var(--note); font-style: italic; }
     .node.note-mock .node-body { background: transparent; color: #e8dfc9; }
 
-    /* ============ faixa inferior (dentro da moldura) ============ */
-    .strip {
-      display: flex; align-items: center; justify-content: space-between;
-      gap: 24px; flex-wrap: wrap;
-      padding: 20px 40px 8px; font-size: 12px; color: var(--muted);
+    /* ---- seções ----------------------------------------------- */
+    section { padding: 88px 0; }
+    .sec-label {
+      font-size: 12px; letter-spacing: 0.14em; color: var(--brass);
+      margin-bottom: 14px;
     }
-    .strip .plats { display: flex; align-items: center; gap: 22px; }
-    .strip .plats b { color: var(--text); font-weight: 600; }
-    .strip .built { color: var(--brass-dim); }
+    h2 {
+      font-size: clamp(24px, 3.6vw, 34px);
+      font-weight: 800; letter-spacing: -0.02em;
+      line-height: 1.2;
+      max-width: 24ch;
+    }
 
-    /* ============ seções abaixo da moldura ============ */
-    .wrap { max-width: 1060px; margin: 0 auto; padding: 0 24px; }
-    section { padding: 96px 0; }
-    .sec-label { font-size: 12px; letter-spacing: .14em; color: var(--brass); margin-bottom: 14px; }
-    h2 { font-size: clamp(26px, 3.6vw, 38px); font-weight: 800; letter-spacing: -0.025em; line-height: 1.15; max-width: 22ch; }
-
-    .naipes { margin-top: 46px; display: grid; grid-template-columns: repeat(auto-fit, minmax(232px, 1fr)); gap: 16px; }
+    .naipes {
+      margin-top: 44px;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+      gap: 16px;
+    }
     .naipe {
-      background: var(--card); border: 1px solid var(--border); border-top: 2px solid var(--sec);
-      border-radius: 12px; padding: 24px 22px;
-      transition: transform .2s cubic-bezier(0.4,0,0.2,1), border-color .2s, box-shadow .2s;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-top: 2px solid var(--sec);
+      border-radius: 10px;
+      padding: 22px 20px;
     }
-    .naipe:hover { transform: translateY(-4px); border-color: var(--sec); box-shadow: 0 16px 40px rgba(0,0,0,0.4); }
-    .naipe .naipe-sec { font-size: 11px; font-style: italic; letter-spacing: .08em; color: var(--sec); margin-bottom: 12px; }
+    .naipe .naipe-sec {
+      font-size: 11px; font-style: italic; letter-spacing: 0.08em;
+      color: var(--sec);
+      margin-bottom: 12px;
+    }
     .naipe h3 { font-size: 15px; font-weight: 600; margin-bottom: 8px; }
     .naipe p { font-size: 13px; color: var(--muted); }
-    .chip { display: inline-block; margin-left: 8px; font-size: 10px; font-style: normal; letter-spacing: .06em; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 1px 8px; vertical-align: 1px; }
+    .chip {
+      display: inline-block; margin-left: 8px;
+      font-size: 10px; font-style: normal; letter-spacing: 0.06em;
+      color: var(--muted); border: 1px solid var(--border);
+      border-radius: 999px; padding: 1px 8px;
+      vertical-align: 1px;
+    }
 
-    .steps { margin-top: 46px; display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+    /* ---- como funciona ---------------------------------------- */
+    .steps { margin-top: 44px; display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
     .step { border-left: 2px solid var(--brass-dim); padding: 4px 0 4px 20px; }
-    .step kbd { font: 600 12px var(--mono); background: var(--card-2); border: 1px solid var(--border); border-radius: 5px; padding: 2px 7px; }
+    .step kbd {
+      font: 600 12px var(--mono);
+      background: var(--panel-2); border: 1px solid var(--border);
+      border-radius: 5px; padding: 2px 7px;
+    }
     .step h3 { font-size: 14px; font-weight: 600; margin-bottom: 8px; }
     .step p { font-size: 13px; color: var(--muted); }
 
+    /* ---- download --------------------------------------------- */
     #download .dl-box {
-      margin-top: 42px; background: var(--card); border: 1px solid var(--border); border-radius: 14px;
-      padding: 40px 36px; display: flex; align-items: center; justify-content: space-between; gap: 28px; flex-wrap: wrap;
+      margin-top: 40px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 40px 36px;
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 28px; flex-wrap: wrap;
     }
-    .platforms { font-size: 13px; color: var(--muted); } .platforms b { color: var(--text); font-weight: 600; }
+    .platforms { font-size: 13px; color: var(--muted); }
+    .platforms b { color: var(--text); font-weight: 600; }
 
-    footer { border-top: 1px solid var(--border); padding: 30px 0 20px; font-size: 12px; color: var(--muted);
-      display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
-    footer a { color: var(--muted); } footer a:hover { color: var(--text); }
-
-    /* ============ responsivo ============ */
-    @media (max-width: 900px) {
-      .hero { grid-template-columns: 1fr; gap: 32px; padding: 44px 32px 48px; }
-      .stage-col { order: 2; }
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 30px 0 44px;
+      font-size: 12px; color: var(--muted);
+      display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap;
     }
-    @media (max-width: 620px) {
-      body { padding: 8px; }
-      .frame { border-radius: 14px; padding: 10px; }
-      .titlebar { flex-wrap: wrap; gap: 10px; padding: 6px 6px 14px; }
-      .nav-links { gap: 14px; font-size: 12px; }
-      .nav-links a[href="#como"] { display: none; }
-      .hero { padding: 32px 20px 36px; }
-      .scenes { display: flex; overflow-x: auto; max-width: 100%; -webkit-overflow-scrolling: touch; }
-      .scene-btn { flex: none; }
-      .stage { height: auto; display: grid; gap: 10px; padding: 12px; }
+    footer a { color: var(--muted); }
+    footer a:hover { color: var(--text); }
+
+    @media (max-width: 720px) {
+      /* mock vira pilha: nós estáticos, sem arestas */
+      .stage { height: auto; padding: 16px; display: grid; gap: 12px; }
       .stage svg.edges { display: none; }
-      .stage .node { position: static !important; width: auto !important; height: auto !important; opacity: 1 !important; filter: none !important; }
-      .strip { padding: 16px 16px 6px; } .strip .plats { gap: 14px; flex-wrap: wrap; }
+      .stage .node { position: static !important; width: auto !important; height: auto !important; min-height: 90px; }
       section { padding: 64px 0; }
     }
+    @media (max-width: 540px) {
+      nav { flex-direction: column; align-items: flex-start; gap: 10px; padding: 18px 0 12px; }
+      header.hero { padding: 44px 0 40px; }
+      .eyebrow { font-size: 11px; padding: 4px 12px; margin-bottom: 22px; }
+      .sub { font-size: 14px; }
+      .cta-row { gap: 10px; }
+      .btn { padding: 12px 18px; }
+      .stage { margin-top: 44px; }
+      #download .dl-box { padding: 28px 22px; }
+    }
     @media (prefers-reduced-motion: reduce) {
-      *, *::before, *::after { animation: none !important; transition: none !important; }
+      * { animation: none !important; transition: none !important; }
       html { scroll-behavior: auto; }
     }
   </style>
 </head>
 <body>
-  <div class="frame">
-    <div class="titlebar">
-      <span class="traffic" aria-hidden="true"><i></i><i></i><i></i></span>
+  <div class="wrap">
+    <nav>
       <a class="wordmark" href="#">or<em>q</em>uestra</a>
-      <nav class="nav-links">
+      <div class="nav-links">
         <a href="#naipes">recursos</a>
         <a href="#como">como funciona</a>
         <a href="https://github.com/Caiollaz/orquestra">github</a>
-        <a class="nav-cta" href="https://github.com/Caiollaz/orquestra/releases">Baixar — grátis</a>
-      </nav>
-    </div>
+      </div>
+    </nav>
+  </div>
 
-    <div class="screen">
-      <span class="hero-glow" aria-hidden="true"></span>
-      <div class="hero">
-        <!-- coluna esquerda: mensagem -->
-        <div class="hero-copy">
-          <span class="badge"><span class="dot"></span><b>3 plataformas</b> · Linux · Windows · macOS</span>
-          <h1>or<em>q</em>uestra</h1>
-          <p class="tagline">Vários agentes claude num só canvas. Você no pódio.</p>
-          <p class="sub">
-            Terminais interativos de verdade que você conecta e vê trabalhando em paralelo.
-            Eles <strong>se coordenam sozinhos</strong> — você rege.
-          </p>
-          <div class="cta-row">
-            <a class="btn-brass" href="https://github.com/Caiollaz/orquestra/releases">Baixar o app</a>
-            <a class="btn-link" href="https://github.com/Caiollaz/orquestra">Ver o código <span class="arw">↗</span></a>
-          </div>
-          <div class="rating">
-            <span class="stars">★★★★★</span> código aberto · feito com Tauri, Rust e React
-          </div>
+  <header class="hero">
+    <span class="hero-glow" aria-hidden="true"></span>
+    <div class="wrap">
+      <span class="eyebrow">app desktop · linux / windows / macos · código aberto</span>
+      <h1>Vários agentes claude.<br />Um maestro: <em>você.</em></h1>
+      <p class="sub">
+        <strong>orquestra</strong> é um canvas infinito de terminais interativos de verdade.
+        Crie agentes, dê contexto, conecte um ao outro e acompanhe tudo
+        acontecendo em paralelo — <strong>à vista, sob seu comando</strong>.
+      </p>
+      <div class="cta-row">
+        <a class="btn btn-brass" href="https://github.com/Caiollaz/orquestra/releases">Baixar o app</a>
+        <a class="btn btn-ghost" href="https://github.com/Caiollaz/orquestra">Ver o código</a>
+      </div>
+      <p class="cta-note">.deb · .AppImage · .exe · .dmg — direto dos releases.</p>
+
+      <!-- mock do canvas: o produto é o herói -->
+      <div class="stage" aria-hidden="true">
+        <svg class="edges" viewBox="0 0 1000 430" preserveAspectRatio="none">
+          <path class="edge" d="M 300 105 C 350 105, 350 200, 400 200" />
+          <path class="edge" d="M 300 314 C 350 314, 350 245, 400 245" />
+          <path class="edge" id="wire" d="M 720 220 C 742 220, 738 125, 760 125" />
+          <circle class="pulse" r="4" cx="720" cy="220" />
+        </svg>
+
+        <div class="node note-mock" style="left: 4%; top: 10%; width: 26%; height: 30%;">
+          <div class="node-head">contexto</div>
+          <div class="node-body">Spec: exportar relatório CSV.
+Colunas: data, valor, status.
+Sem libs novas.</div>
         </div>
 
-        <!-- coluna direita: palco interativo -->
-        <div class="stage-col">
-          <div class="scenes" role="tablist" aria-label="Cenas do canvas">
-            <button class="scene-btn" role="tab" data-scene="all" aria-selected="true" style="--sec: var(--brass);"><span class="lamp"></span>tudo</button>
-            <button class="scene-btn" role="tab" data-scene="claude" aria-selected="false" style="--sec: var(--brass);"><span class="lamp"></span>claude</button>
-            <button class="scene-btn" role="tab" data-scene="shell" aria-selected="false" style="--sec: var(--strings);"><span class="lamp"></span>shell</button>
-            <button class="scene-btn" role="tab" data-scene="contexto" aria-selected="false" style="--sec: var(--note);"><span class="lamp"></span>contexto</button>
-          </div>
-
-          <div class="stage" data-scene="all">
-            <svg class="edges" viewBox="0 0 560 360" preserveAspectRatio="none">
-              <path class="edge" d="M 150 96 C 200 96, 190 176, 240 176" />
-              <path class="edge" d="M 150 292 C 200 292, 195 210, 240 210" />
-              <path class="edge" id="wire" d="M 420 190 C 452 190, 448 104, 480 104" />
-              <circle class="pulse" r="4" cx="420" cy="190" />
-            </svg>
-
-            <div class="node note-mock" data-role="contexto" style="left: 3%; top: 8%; width: 26%; height: 30%;">
-              <div class="node-head">contexto</div>
-              <div class="node-body">Spec: exportar CSV.
-Colunas: data, valor.</div>
-            </div>
-
-            <div class="node" data-role="shell" style="--sec: var(--strings); left: 3%; top: 60%; width: 26%; height: 30%;">
-              <div class="node-head"><span class="lamp"></span>shell-1</div>
-              <div class="node-body"><span class="ok">✓</span> 14 passed
+        <div class="node" style="--sec: var(--strings); left: 4%; top: 58%; width: 26%; height: 30%;">
+          <div class="node-head"><span class="lamp"></span>shell</div>
+          <div class="node-body"><span class="ok">✓</span> testes: 14 passed
 <span class="dim">~/projeto</span> $ <span class="cursor"></span></div>
-            </div>
+        </div>
 
-            <div class="node" data-role="claude" style="--sec: var(--brass); left: 40%; top: 24%; width: 33%; height: 52%;">
-              <div class="node-head"><span class="lamp"></span>claude-1 · implementador</div>
-              <div class="node-body"><span class="brass">●</span> Lendo a spec…
+        <div class="node" style="--sec: var(--brass); left: 40%; top: 26%; width: 32%; height: 50%;">
+          <div class="node-head"><span class="lamp"></span>claude · implementador</div>
+          <div class="node-body"><span class="brass">●</span> Lendo a spec recebida…
 
-Plano: criar <span class="ok">export.ts</span>,
-formatar e gravar o CSV.
+Plano: criar <span class="ok">export.ts</span>, formatar
+colunas e escrever o CSV.
 
 <span id="typed"></span><span class="cursor"></span></div>
-            </div>
+        </div>
 
-            <div class="node" data-role="claude" style="--sec: var(--woods); left: 78%; top: 10%; width: 20%; height: 38%;">
-              <div class="node-head"><span class="lamp"></span>claude-2 · revisor</div>
-              <div class="node-body"><span class="dim">aguardando…</span></div>
-            </div>
-          </div>
+        <div class="node" style="--sec: var(--woods); left: 76%; top: 12%; width: 20%; height: 36%;">
+          <div class="node-head"><span class="lamp"></span>claude · revisor</div>
+          <div class="node-body"><span class="dim">aguardando saída
+do implementador…</span></div>
         </div>
       </div>
-
-      <div class="strip">
-        <div class="plats"><b>Linux</b> .deb · .rpm · .AppImage &nbsp; <b>Windows</b> .exe · .msi &nbsp; <b>macOS</b> .dmg</div>
-        <span class="built">v0.2.0 · atualização automática pelos releases</span>
-      </div>
     </div>
-  </div>
+  </header>
 
   <div class="wrap">
     <section id="naipes">
@@ -362,8 +355,8 @@ formatar e gravar o CSV.
         </div>
         <div class="naipe" style="--sec: var(--perc);">
           <p class="naipe-sec">percussão</p>
-          <h3>Comunicação automática</h3>
-          <p>Ligue nós com arestas: um agente escreve <b>⇢nome: msg</b> e o orquestra entrega no chat do outro. Eles se coordenam sozinhos.</p>
+          <h3>Comunicação entre agentes</h3>
+          <p>Ligue nós com arestas e encaminhe a saída de um agente pro stdin de outro. Blocos de contexto alimentam vários de uma vez.</p>
         </div>
         <div class="naipe" style="--sec: var(--strings);">
           <p class="naipe-sec">cordas <span class="chip">em breve</span></p>
@@ -392,7 +385,7 @@ formatar e gravar o CSV.
         </div>
         <div class="step">
           <h3>3. Conecte e reja</h3>
-          <p>Arestas levam mensagens de um nó pro outro. Você acompanha tudo e intervém em qualquer terminal, a qualquer momento.</p>
+          <p>Arestas levam a saída de um nó pro outro. Você acompanha tudo e intervém em qualquer terminal, a qualquer momento.</p>
         </div>
       </div>
     </section>
@@ -406,12 +399,12 @@ formatar e gravar o CSV.
           <b>Windows</b> .exe / .msi &nbsp;·&nbsp;
           <b>macOS</b> .dmg (Intel e Apple Silicon)
         </p>
-        <a class="btn-brass" href="https://github.com/Caiollaz/orquestra/releases">Ir pros downloads</a>
+        <a class="btn btn-brass" href="https://github.com/Caiollaz/orquestra/releases">Ir pros downloads</a>
       </div>
     </section>
 
     <footer>
-      <span>or<em style="color: var(--brass); font-style: italic;">q</em>uestra — código aberto, feito com Tauri.</span>
+      <span>or<em style="color: var(--brass);">q</em>uestra — código aberto, feito com Tauri.</span>
       <span><a href="https://github.com/Caiollaz/orquestra">github.com/Caiollaz/orquestra</a></span>
     </footer>
   </div>
@@ -421,77 +414,80 @@ formatar e gravar o CSV.
   <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/MotionPathPlugin.min.js"></script>
   <script>
     const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-    // --- interação real: seletor de cena (clique nas pills troca o foco do palco) ---
-    const stageEl = document.querySelector(".stage");
-    document.querySelectorAll(".scene-btn").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        document.querySelectorAll(".scene-btn").forEach((b) => b.setAttribute("aria-selected", "false"));
-        btn.setAttribute("aria-selected", "true");
-        stageEl.dataset.scene = btn.dataset.scene;
-      });
-    });
-
-    // --- digitação no nó implementador ---
     const typedEl = document.getElementById("typed");
-    const lines = ["Escrevendo export.ts…", "Rodando os testes…", "Pronto. ⇢claude-2: revisa"];
+    const lines = ["Escrevendo src/export.ts…", "Rodando os testes…", "Pronto. Encaminhando pro revisor ⇢"];
+
+    // digitação no nó central; devolve promessa que resolve quando a 1ª frase termina
     function startTyping() {
-      let li = 0, ci = 0;
+      let li = 0, ci = 0, firstDone;
+      const done = new Promise((r) => (firstDone = r));
       (function tick() {
-        if (ci <= lines[li].length) { typedEl.textContent = lines[li].slice(0, ci++); setTimeout(tick, 45); }
-        else setTimeout(() => { li = (li + 1) % lines.length; ci = 0; tick(); }, 2200);
+        if (ci <= lines[li].length) {
+          typedEl.textContent = lines[li].slice(0, ci++);
+          setTimeout(tick, 45);
+        } else {
+          if (li === 0) firstDone();
+          setTimeout(() => { li = (li + 1) % lines.length; ci = 0; tick(); }, 2200);
+        }
       })();
+      return done;
     }
 
+    // sem GSAP ou movimento reduzido: conteúdo estático, última frase pronta
     if (reduce || !window.gsap) {
       typedEl.textContent = lines[lines.length - 1];
     } else {
       const { gsap } = window;
       gsap.registerPlugin(ScrollTrigger, MotionPathPlugin);
-      const EASE = "power3.out", QUICK = .3, STD = .5, SLOW = .8;
+      // signature easing (Premium) + paleta de durações
+      const EASE = "power3.out", QUICK = 0.3, STD = 0.5, SLOW = 0.8;
 
-      gsap.set(".badge, h1, .tagline, .sub, .cta-row > *, .rating", { opacity: 0, y: 22 });
-      gsap.set(".scenes, .stage", { opacity: 0, y: 30 });
-      gsap.set(".stage .node", { opacity: 0, y: 16, scale: .96, transformOrigin: "50% 50%" });
+      gsap.set([".eyebrow", "h1", ".sub", ".cta-row .btn", ".cta-note"], { opacity: 0, y: 24 });
+      gsap.set(".stage", { opacity: 0, y: 40 });
+      gsap.set(".stage .node", { opacity: 0, y: 16, scale: 0.96, transformOrigin: "50% 50%" });
       gsap.set(".edges", { opacity: 0 });
 
+      // abertura do herói: entra o texto, depois o palco, depois os músicos (stagger < 500ms)
       const intro = gsap.timeline({ defaults: { ease: EASE } });
       intro
-        .to(".badge", { opacity: 1, y: 0, duration: QUICK })
-        .to("h1", { opacity: 1, y: 0, duration: SLOW }, "-=.1")
-        .to(".tagline", { opacity: 1, y: 0, duration: STD }, "-=.5")
-        .to(".sub", { opacity: 1, y: 0, duration: STD }, "-=.35")
-        .to(".cta-row > *", { opacity: 1, y: 0, duration: STD, stagger: .08 }, "-=.3")
-        .to(".rating", { opacity: 1, y: 0, duration: QUICK }, "-=.3")
-        .to(".scenes", { opacity: 1, y: 0, duration: STD }, "-=.6")
-        .to(".stage", { opacity: 1, y: 0, duration: SLOW }, "-=.4")
-        .to(".stage .node", { opacity: 1, y: 0, scale: 1, duration: STD, stagger: .12,
-             clearProps: "opacity,transform" }, "-=.4") // clearProps: hover CSS volta a funcionar
-        .to(".edges", { opacity: 1, duration: STD }, "-=.2")
-        .add(() => { startTyping(); runWire(); });
+        .to(".eyebrow", { opacity: 1, y: 0, duration: QUICK })
+        .to("h1", { opacity: 1, y: 0, duration: SLOW }, "-=0.1")
+        .to(".sub", { opacity: 1, y: 0, duration: STD }, "-=0.45")
+        .to(".cta-row .btn", { opacity: 1, y: 0, duration: STD, stagger: 0.08 }, "-=0.3")
+        .to(".cta-note", { opacity: 1, y: 0, duration: QUICK }, "-=0.3")
+        .to(".stage", { opacity: 1, y: 0, duration: SLOW }, "-=0.2")
+        .to(".stage .node", { opacity: 1, y: 0, scale: 1, duration: STD, stagger: 0.12 }, "-=0.4")
+        .to(".edges", { opacity: 1, duration: STD }, "-=0.2")
+        .add(() => { startTyping(); runWire(); });   // narrativa começa quando o palco está montado
 
-      gsap.to(".hero-glow", { opacity: .6, scale: 1.08, duration: 4.5, ease: "sine.inOut", yoyo: true, repeat: -1, transformOrigin: "60% 40%" });
+      // camada ambient: brilho respirando (sine, loop suave)
+      gsap.to(".hero-glow", { opacity: 0.55, scale: 1.08, duration: 4, ease: "sine.inOut", yoyo: true, repeat: -1, transformOrigin: "50% 50%" });
 
+      // micro-história: mensagem viaja o cabo implementador → revisor, em loop
       function runWire() {
         gsap.timeline({ repeat: -1, repeatDelay: 1.6 })
-          .fromTo(".pulse", { opacity: 0 }, { opacity: 1, duration: .2 })
-          .to(".pulse", { duration: 1, ease: "power1.inOut", motionPath: { path: "#wire", align: "#wire", alignOrigin: [.5, .5] } }, "<")
-          .to(".pulse", { opacity: 0, duration: .25 });
+          .fromTo(".pulse", { opacity: 0 }, { opacity: 1, duration: 0.2 })
+          .to(".pulse", { duration: 1, ease: "power1.inOut", motionPath: { path: "#wire", align: "#wire", alignOrigin: [0.5, 0.5] } }, "<")
+          .to(".pulse", { opacity: 0, duration: 0.25 });
       }
 
+      // revelação no scroll (uma vez), cards e passos em lote com stagger
       gsap.utils.toArray("section").forEach((sec) => {
         gsap.from(sec.querySelectorAll(".sec-label, h2"), {
-          opacity: 0, y: 20, duration: STD, ease: EASE, stagger: .1,
-          scrollTrigger: { trigger: sec, start: "top 80%", once: true },
+          opacity: 0, y: 20, duration: STD, ease: EASE, stagger: 0.1,
+          scrollTrigger: { trigger: sec, start: "top 78%", once: true },
         });
       });
       ScrollTrigger.batch(".naipe, .step", {
-        start: "top 88%", once: true,
-        onEnter: (els) => gsap.from(els, { opacity: 0, y: 28, duration: STD, ease: EASE, stagger: .1, overwrite: true }),
+        start: "top 85%", once: true,
+        onEnter: (els) => gsap.from(els, { opacity: 0, y: 28, duration: STD, ease: EASE, stagger: 0.1, overwrite: true }),
       });
-      gsap.from(".dl-box", { opacity: 0, y: 28, duration: STD, ease: EASE,
-        scrollTrigger: { trigger: ".dl-box", start: "top 88%", once: true } });
+      gsap.from(".dl-box", {
+        opacity: 0, y: 28, duration: STD, ease: EASE,
+        scrollTrigger: { trigger: ".dl-box", start: "top 85%", once: true },
+      });
 
+      // posições dependem da fonte carregada: recalcula os triggers
       document.fonts.ready.then(() => ScrollTrigger.refresh());
     }
   </script>
