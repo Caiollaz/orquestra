@@ -2,8 +2,9 @@
 
 Orquestra **não embute** o Claude nem nenhum agente. Cada nó abre um terminal e
 executa um programa que **já precisa estar instalado na sua máquina** — por
-padrão, o CLI `claude` (Claude Code). Se o programa não estiver no `PATH`, o nó
-abre com erro:
+padrão, o CLI `claude` (Claude Code); também há nós prontos pra `codex`,
+`opencode` e `antigravity` ([abaixo](#outros-agentes-codex-opencode-antigravity)).
+Se o programa não estiver no `PATH`, o nó abre com erro:
 
 ```
 [falha ao iniciar: CreateProcessW `"claude"` in cwd `...` failed:
@@ -67,9 +68,16 @@ O app não depende do `PATH` da GUI (que costuma vir capado). Ele monta um `PATH
 aumentado e procura nestas pastas, além do `PATH` do seu shell de login:
 
 **Windows**
+- o `Path` gravado no registro (usuário **e** máquina) — não só o que o app
+  herdou ao abrir
 - `%USERPROFILE%\.local\bin` (instalador nativo)
 - `%APPDATA%\npm` (npm global)
+- `%LOCALAPPDATA%\agy\bin` (Antigravity)
 - `%USERPROFILE%\.bun\bin`, `%LOCALAPPDATA%\Microsoft\WindowsApps`
+
+Em cada pasta ele testa as extensões do `PATHEXT` (`.cmd`, `.exe`…) **antes** do
+nome sem extensão: o npm instala os dois lado a lado e o sem extensão é script
+bash, que o Windows não executa (`os error 193`).
 
 **macOS / Linux**
 - `~/.local/bin`, `~/.cargo/bin`, `~/.bun/bin`, `~/.deno/bin`, `~/.volta/bin`, `~/bin`
@@ -90,9 +98,25 @@ O Claude Code roda subprocessos com Node. Instale o **Node 18+**
 O recurso **Floors** usa `git worktree`. Precisa do Git no `PATH` e o projeto
 tem que ser um repositório git. Sem Git, o resto do app funciona normal.
 
-## Outros agentes (Codex, etc.)
+## Outros agentes (Codex, OpenCode, Antigravity)
 
-Um nó pode rodar qualquer comando via tipo **shell** — inclusive outro CLI de
-agente (ex.: `codex`). A regra é a mesma: **o binário tem que estar no `PATH`**
-antes de abrir o nó. Se `codex --version` funciona no seu terminal, funciona no
-Orquestra.
+Desde a 0.8.0 esses três têm nó próprio (botão do robô na island, click direito
+ou Batuta) e recebem o mesmo tratamento do claude: protocolo `⇢NOME:`, papéis e
+contextos. O Orquestra também **não** os embute — o binário tem que estar no
+`PATH`:
+
+| Agente | Comando que o Orquestra roda |
+| --- | --- |
+| Codex | `codex` |
+| OpenCode | `opencode` |
+| Antigravity | `agy` |
+
+Se `codex --version` funciona no seu terminal, funciona no Orquestra. Qualquer
+outro CLI de agente roda num nó do tipo **shell** — só não recebe o protocolo.
+
+> **Acabou de instalar e o nó ainda dá `os error 2`?** No Windows, um programa
+> aberto antes da instalação continua com o `PATH` antigo. O Orquestra lê o
+> `Path` direto do registro pra contornar isso, mas se ainda falhar: feche o
+> Orquestra por completo e abra de novo (não basta fechar a janela). Confirme
+> antes com `where agy` num terminal **novo** — se ali não achar, o problema é
+> a instalação do CLI, não o Orquestra.

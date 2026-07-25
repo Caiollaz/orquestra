@@ -21,5 +21,8 @@
     "noFallthroughCasesInSwitch": true
   },
   "include": ["src"],
+  /* *.check.ts roda no node (node --experimental-strip-types), não no bundle:
+     usa node:assert, que não está nos tipos do app */
+  "exclude": ["src/**/*.check.ts"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

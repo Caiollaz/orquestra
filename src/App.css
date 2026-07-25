@@ -1,37 +1,84 @@
 /* ============================================================
    orquestra — ferramenta de dev, não sala de concerto.
-   Base neutra quase preta, contraste alto, sem cor de marca no
-   cromo: a única cor vem do naipe de cada agente (--section,
-   setado inline no nó) e do cabo incandescente quando passa dado.
+   Preto puro, contraste alto, cor de marca só em três lugares:
+   naipe do agente (--section, setado inline no nó), workspace ativo
+   e cabo aceso quando passa dado.
 
-   Uma voz tipográfica só: --mono. Rótulo de nó é endereço de rota
-   (⇢NOME:), então mono é semântica, não estética. Onde o app
-   "fala" (título de diálogo, estado vazio, placeholder, marcação
-   de estado) o mono vai em itálico — nunca outra família.
+   Duas vozes tipográficas, com fronteira semântica:
+   --sans (Space Grotesk) é o cromo — botão, menu, título, rótulo de
+   UI. --mono (JetBrains Mono) é o dado — terminal, endereço de rota
+   (⇢NOME:), URL, markdown de papel, texto de nota. Se o usuário ou o
+   agente digitou, é mono; se fomos nós que escrevemos, é sans.
+   Space Grotesk não tem itálico (só oblíquo sintético, feio), então a
+   voz do app é peso+cor, nunca inclinação.
+
+   Paleta espelhada na landing page (site/index.html).
    ============================================================ */
 
 :root {
   color-scheme: dark; /* controles nativos (select/scrollbar) seguem o tema escuro */
-  --bg: #09090b;
-  --panel: #101013;
-  --panel-2: #17171b;
-  --border: #26262b;
-  --border-soft: #1d1d21;
-  --text: #ededf0;
-  --muted: #85858f;
-  --accent: #e6e6ea;
-  --marca: #58a6ff;  /* q da marca — mesma cor da landing page e do 1º naipe */
+  --bg: #000000;
+  --panel: #0a0a0c;
+  --panel-2: #101014;
+  --border: #1c1c20;
+  --border-soft: #141418;
+  --text: #f2f2f4;
+  --muted: #8b8b93;
+  --accent: #eaeaee;
+  --marca: #007aff;  /* mesma cor da landing page e do 1º naipe */
   --accent-dim: #6e6e78;
   /* cabo em repouso é grafite, quase invisível: quanto mais quieto o repouso,
-     mais o momento em que o dado passa aparece. Aceso é branco puro — é o
-     evento mais importante do app e não disputa com o naipe de ninguém. */
-  --wire: #2c2c33;
-  --wire-active: #ffffff;
+     mais o momento em que o dado passa aparece. Aceso é o azul da marca —
+     mesmo código visual do "cabo aceso" da landing. */
+  --wire: #2f2f37;
+  --wire-active: #007aff;
   --exited: #f0616a;
   --score: #d2d2d8;  /* papel do nó de nota */
   --portal: #8492a6; /* vidro do portal */
-  --radius: 8px;
+  --term-bg: #06060a;   /* fundo do terminal — paleta completa em tema.ts */
+  --note-bg: #131317;   /* papel da nota */
+  --note-head: #17171b;
+  --note-text: #e6e6ea;
+  --scrim: rgba(0, 0, 0, 0.55);            /* véu atrás de modal */
+  --sombra-no: 0 10px 32px rgba(0, 0, 0, 0.45);      /* nó no canvas */
+  --sombra-flutuante: 0 8px 30px rgba(0, 0, 0, 0.5); /* island */
+  --sombra-modal: 0 18px 52px rgba(0, 0, 0, 0.6);    /* menu, modal, batuta */
+  --radius: 10px;
+  --sans: "Space Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* tema claro: mesma estrutura, superfícies invertidas. O toggle escreve
+   data-tema no <html> (src/tema.ts) e o CSS inteiro segue, porque nada aqui
+   embaixo tem cor fora de token. Duas correções que não são só inverter:
+   o azul da marca escurece (#007aff sobre branco não passa contraste de texto)
+   e --score, que era o cinza-papel claro da nota, vira um cinza escuro —
+   ele é usado como TEXTO e borda, não como fundo. */
+:root[data-tema="claro"] {
+  color-scheme: light;
+  --bg: #ffffff;
+  --panel: #f7f7f8;
+  --panel-2: #ececef;
+  --border: #dcdce1;
+  --border-soft: #e9e9ed;
+  --text: #16161a;
+  --muted: #62626c;
+  --accent: #16161a;
+  --marca: #0060df;
+  --accent-dim: #9a9aa4;
+  --wire: #c4c4cd;
+  --wire-active: #0060df;
+  --exited: #d1242f;
+  --score: #7a7a85;
+  --portal: #5d6a7c;
+  --term-bg: #fbfbfd;
+  --note-bg: #fffdf3;
+  --note-head: #f3f1e4;
+  --note-text: #23231f;
+  --scrim: rgba(20, 20, 30, 0.32);
+  --sombra-no: 0 6px 20px rgba(20, 20, 30, 0.12);
+  --sombra-flutuante: 0 8px 26px rgba(20, 20, 30, 0.14);
+  --sombra-modal: 0 16px 44px rgba(20, 20, 30, 0.2);
 }
 
 * { box-sizing: border-box; }
@@ -45,19 +92,19 @@ html, body, #root { height: 100%; margin: 0; }
 body {
   background: var(--bg);
   color: var(--text);
-  font: 13px/1.45 var(--mono);
+  font: 13px/1.45 var(--sans);
   -webkit-font-smoothing: antialiased;
 }
 
 .app { position: relative; display: flex; flex-direction: row; flex: 1; min-height: 0; overflow: hidden; }
 
 /* ---- barra de janela (decorations: false) ---------------------
-   Cromo, não palco: mesmo --panel da sidebar, então barra e sidebar
-   formam um L contínuo em volta do canvas. A marca aparece pequena e
-   apagada — a lockup grande é da Island. Botões reusam .ib (daí o
-   --s: 1), mas viram células retas de altura cheia: numa faixa de
-   32px, canto arredondado esbarraria na borda. Só o fechar ganha cor,
-   e só no hover — o mesmo vermelho de agente que saiu. */
+   Cromo, não palco: é a única moldura do app, porque o canvas ocupa
+   todo o resto e o gerenciamento de workspace mora na Island. Marca
+   pequena à esquerda (a lockup grande é da Island). Botões reusam .ib
+   (daí o --s: 1), mas viram células retas de altura cheia: numa faixa
+   de 32px, canto arredondado esbarraria na borda. Só o fechar ganha
+   cor, e só no hover — o mesmo vermelho de agente que saiu. */
 .titlebar {
   --s: 1;
   display: flex; align-items: center; flex: none;
@@ -66,18 +113,20 @@ body {
   border-bottom: 1px solid var(--border);
   user-select: none;
 }
-.tb-brand { font: 600 11px var(--mono); letter-spacing: 0.14em; color: var(--muted); }
+.tb-brand { display: inline-flex; align-items: center; gap: 8px; }
+.tb-brand svg { width: 20px; height: 16px; flex: none; color: var(--text); opacity: 0.9; }
+.tb-brand span { font: 600 11px var(--sans); letter-spacing: 0.14em; color: var(--muted); }
 .tb-gap { flex: 1; }
 .titlebar .ib { width: 42px; height: 100%; border: none; border-radius: 0; }
 .titlebar .ib svg { width: 14px; height: 14px; }
 .titlebar .ib:hover { background: var(--panel-2); }
 .tb-close:hover { background: color-mix(in srgb, var(--exited) 20%, transparent); }
 .tb-close:hover svg { color: var(--exited); }
-/* a marca é mono; só o q é itálico. Uma letra trocada no meio da
-   palavra — o mesmo gesto de uma anotação a lápis numa parte impressa. */
+/* o q azul no meio da palavra é a assinatura da marca — mesma letra,
+   mesma cor e mesmo gesto do wordmark da landing page. */
 .brand-q {
-  color: var(--marca); font-family: var(--mono); font-style: italic;
-  font-weight: 500; font-size: 1.12em; line-height: 0;
+  color: var(--marca); font-family: var(--sans);
+  font-weight: 600; font-size: 1.06em; line-height: 0;
 }
 
 /* foco de teclado: piso de qualidade, vale pra tudo que recebe foco */
@@ -85,89 +134,6 @@ button:focus-visible, input:focus-visible, textarea:focus-visible,
 select:focus-visible, [tabindex]:focus-visible {
   outline: 1px solid var(--accent); outline-offset: 1px;
 }
-
-/* ---- sidebar (estúdios / workspaces) ---------------------------
-   Mesma linguagem da island: painel flutuante colado na borda esquerda,
-   raio só na direita (cima e baixo), blur, e largura com mola. */
-
-.sidebar {
-  position: absolute; left: 0; top: 14px; bottom: 14px; z-index: 9;
-  display: flex; flex-direction: column;
-  width: 236px;
-  background: color-mix(in srgb, var(--panel) 90%, transparent);
-  border: 1px solid var(--border);
-  border-left: none;
-  border-radius: 0 18px 18px 0;
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(14px);
-  padding: 12px 10px;
-  gap: 4px;
-  overflow: hidden;
-  /* mola: mesmo easing do morph da island */
-  transition: width 0.38s cubic-bezier(0.34, 1.2, 0.44, 1);
-  animation: sidebar-in 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-@keyframes sidebar-in {
-  from { opacity: 0; transform: translateX(-14px); }
-  to { opacity: 1; transform: translateX(0); }
-}
-.sidebar.is-collapsed { width: 60px; padding: 12px 7px; }
-.sidebar.is-collapsed .sb-item,
-.sidebar.is-collapsed .sb-add { justify-content: center; padding: 5px 0; gap: 0; }
-.sidebar.is-collapsed .sb-head { justify-content: center; padding: 2px 0 10px; }
-
-/* nome entra como o conteúdo da island: slide + blur */
-.sb-name { animation: island-swap 0.3s cubic-bezier(0.2, 0.8, 0.2, 1); }
-
-.sb-head {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 2px 6px 8px;
-}
-/* marca de ensaio (papel utilitário): caps miúdo, tracking largo */
-.sb-title {
-  font: 600 10px var(--mono); letter-spacing: 0.18em; text-transform: uppercase;
-  color: var(--muted); user-select: none;
-}
-.sb-toggle {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 36px; height: 36px; flex: none;
-  background: transparent; border: 1px solid transparent;
-  color: var(--muted); cursor: pointer; border-radius: 10px;
-  transition: background 0.15s, color 0.15s;
-}
-.sb-toggle:hover { color: var(--text); background: var(--panel-2); border-color: var(--border); }
-
-.sb-list {
-  display: flex; flex-direction: column; gap: 2px; flex: 1; min-height: 0;
-  overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin;
-}
-
-.sb-item, .sb-add {
-  display: flex; align-items: center; gap: 9px;
-  background: transparent; border: 1px solid transparent;
-  color: var(--text); cursor: pointer;
-  border-radius: 10px; padding: 5px 6px; text-align: left;
-  font: 500 12px var(--mono); width: 100%;
-  transition: background 0.15s, border-color 0.15s;
-}
-/* ativo: azul da marca, sem borda */
-.sb-item.is-active { background: color-mix(in srgb, var(--marca) 14%, transparent); }
-.sb-item.is-active .sb-name { color: var(--marca); }
-.sb-item.is-active .sb-badge {
-  background: color-mix(in srgb, var(--marca) 20%, transparent);
-  border-color: transparent; color: var(--marca);
-}
-
-.sb-badge {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 32px; height: 32px; flex: none;
-  border-radius: 9px; background: var(--panel-2);
-  border: 1px solid var(--border);
-  font: 600 16px var(--mono); color: var(--muted);
-}
-.sb-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sb-add { margin-top: 4px; color: var(--muted); }
-.sb-add .sb-badge { background: transparent; border-style: dashed; font-size: 16px; }
 
 /* ---- palco (canvas) + Dynamic Island ------------------------- */
 
@@ -185,19 +151,21 @@ select:focus-visible, [tabindex]:focus-visible {
   position: absolute; top: 0; left: 50%; transform: translateX(-50%);
   z-index: 10;
   display: flex; align-items: center;
-  padding: calc(7px * var(--s)) calc(10px * var(--s));
+  /* +1px em cima porque não há border-top: sem isso o conteúdo fica meio pixel
+     acima do centro óptico da faixa visível */
+  padding: calc(7px * var(--s) + 1px) calc(10px * var(--s)) calc(7px * var(--s));
   background: color-mix(in srgb, var(--panel) 90%, transparent);
   border: 1px solid var(--border);
   border-top: none;
   border-radius: 0 0 calc(18px * var(--s)) calc(18px * var(--s));
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--sombra-flutuante);
   backdrop-filter: blur(14px);
   animation: island-in 0.22s ease-out;
   overflow: hidden; white-space: nowrap;
   transition: border-color 0.25s, box-shadow 0.25s;
 }
 .island.is-pill { cursor: pointer; }
-.island.is-open { box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6); }
+.island.is-open { box-shadow: var(--sombra-modal); }
 .island.is-activity { border-color: color-mix(in srgb, var(--act, var(--accent)) 45%, var(--border)); }
 @keyframes island-in {
   from { opacity: 0; transform: translateX(-50%) translateY(-8px) scale(0.96); }
@@ -214,15 +182,27 @@ select:focus-visible, [tabindex]:focus-visible {
 
 /* pastilha: marca + workspace + nº de agentes vivos (sem lâmpada piscando) */
 .island-pill { padding: calc(2px * var(--s)) calc(6px * var(--s)); }
+/* contador de agentes vivos. Chip preenchido, não anel: nesse tamanho um
+   hairline de 1px vira ruído e puxa a atenção mais que o nome do workspace.
+   Centragem por flex, nunca por line-height — a métrica do dígito muda com a
+   família e era o que deixava o número torto dentro do círculo. Altura casada
+   com a do texto da marca pra não ser ele a definir a altura da pastilha.
+   min-width = height: 1 dígito vira círculo, 2+ viram cápsula. Mono tabular
+   porque é número que muda (9 → 10 não pode empurrar o layout). */
 .island-count {
-  font: 600 calc(11px * var(--s)) var(--mono); color: var(--accent);
-  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
-  border-radius: 999px; padding: 0 calc(7px * var(--s)); line-height: calc(17px * var(--s));
+  display: inline-flex; align-items: center; justify-content: center;
+  height: calc(17px * var(--s)); min-width: calc(17px * var(--s));
+  padding: 0 calc(5px * var(--s));
+  font: 500 calc(11px * var(--s))/1 var(--mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border-radius: 999px;
 }
 
 /* atividade ao vivo: ponto estático com brilho + texto, cor pelo tom */
 .island-act { padding: calc(2px * var(--s)) calc(10px * var(--s)); gap: calc(9px * var(--s)); }
-.island-act.tone-flow { --act: #58a6ff; }
+.island-act.tone-flow { --act: #007aff; }
 .island-act.tone-ok { --act: #3fb950; }
 .island-act.tone-bad { --act: #f0616a; }
 .island-act-dot {
@@ -230,18 +210,37 @@ select:focus-visible, [tabindex]:focus-visible {
   background: var(--act); box-shadow: 0 0 calc(10px * var(--s)) var(--act);
   flex: none;
 }
-.island-act-text { font: 500 calc(12px * var(--s)) var(--mono); color: var(--text); }
+.island-act-text { font: 500 calc(12px * var(--s)) var(--sans); color: var(--text); }
 
 .island-id {
   display: inline-flex; align-items: center; gap: calc(8px * var(--s));
   padding: 0 calc(10px * var(--s)) 0 calc(6px * var(--s)); max-width: calc(220px * var(--s));
 }
-.island-brand { font: 700 calc(13px * var(--s)) var(--mono); letter-spacing: 0.08em; }
+/* o tracking sobra depois do último caractere e faz o vão pra direita parecer
+   maior que os outros: desconta o mesmo valor */
+.island-brand { font: 700 calc(13px * var(--s)) var(--sans); letter-spacing: 0.08em; margin-right: -0.08em; }
 .island-ws {
-  font: 500 calc(12px * var(--s)) var(--mono); color: var(--muted);
+  font: 500 calc(12px * var(--s)) var(--sans); color: var(--muted);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .island-sep { width: 1px; height: calc(20px * var(--s)); background: var(--border); margin: 0 calc(3px * var(--s)); }
+
+/* seletor de workspace: o gerenciamento inteiro (trocar, abrir pasta,
+   renomear, abrir no editor, remover) sai de um menu ancorado aqui —
+   era a sidebar, que virou um clique em vez de uma coluna permanente. */
+.ib-ws {
+  display: inline-flex; align-items: center; gap: calc(6px * var(--s));
+  max-width: calc(240px * var(--s));
+  padding: calc(4px * var(--s)) calc(8px * var(--s));
+  background: transparent; border: 1px solid transparent;
+  border-radius: calc(9px * var(--s));
+  color: var(--text); cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+.ib-ws:hover { background: var(--panel-2); border-color: var(--border); }
+.ib-ws:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
+.ib-ws svg { width: calc(12px * var(--s)); height: calc(12px * var(--s)); color: var(--muted); flex: none; }
+.ib-ws .island-ws { color: var(--text); }
 
 /* botões da island: quadrados iguais, icon-only */
 .ib {
@@ -255,11 +254,11 @@ select:focus-visible, [tabindex]:focus-visible {
 .ib:hover { background: var(--panel-2); border-color: var(--border); }
 .ib:hover svg { opacity: 1; }
 .ib-accent svg { color: var(--accent); opacity: 1; }
-.ib:focus-visible, .sb-item:focus-visible, .agent-btn:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
+.ib:focus-visible, .agent-btn:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
 
-/* escala a island (e a sidebar) em telas grandes */
-@media (min-width: 2200px) { .island { --s: 1.5; } .sidebar { width: 300px; } .sidebar.is-collapsed { width: 80px; } }
-@media (min-width: 3400px) { .island { --s: 2.1; } .sidebar { width: 372px; } .sidebar.is-collapsed { width: 98px; } }
+/* escala a island em telas grandes */
+@media (min-width: 2200px) { .island, .zoom-bar { --s: 1.5; } }
+@media (min-width: 3400px) { .island, .zoom-bar { --s: 2.1; } }
 
 /* ---- menu de contexto ---------------------------------------- */
 
@@ -268,7 +267,7 @@ select:focus-visible, [tabindex]:focus-visible {
   min-width: 168px; padding: 5px;
   background: color-mix(in srgb, var(--panel) 97%, transparent);
   border: 1px solid var(--border); border-radius: 10px;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
+  box-shadow: var(--sombra-modal);
   backdrop-filter: blur(8px);
   animation: ctx-in 0.1s ease-out;
 }
@@ -277,7 +276,7 @@ select:focus-visible, [tabindex]:focus-visible {
   display: flex; align-items: center; gap: 9px; width: 100%; text-align: left;
   background: transparent; border: none; color: var(--text);
   padding: 7px 10px; border-radius: 6px; cursor: pointer;
-  font: 12px var(--mono);
+  font: 12px var(--sans);
 }
 .ctx-item:hover { background: var(--panel-2); }
 .ctx-item.danger { color: var(--exited); }
@@ -291,18 +290,40 @@ select:focus-visible, [tabindex]:focus-visible {
 .ctx-lbl { flex: 1; }
 .ctx-sep { height: 1px; background: var(--border); margin: 4px 6px; }
 
-.react-flow__controls {
-  box-shadow: none;
+/* ---- controles de zoom (Controles.tsx) ------------------------
+   Mesma linguagem da island: pastilha flutuante com blur, colada no canto de
+   baixo à direita. Escala com --s junto da island nos @media grandes. */
+.zoom-bar {
+  --s: 1.15;
+  position: absolute; right: calc(12px * var(--s)); bottom: calc(12px * var(--s)); z-index: 9;
+  display: flex; align-items: center; gap: calc(1px * var(--s));
+  padding: calc(4px * var(--s));
+  background: color-mix(in srgb, var(--panel) 90%, transparent);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
-  overflow: hidden;
+  border-radius: 999px;
+  box-shadow: var(--sombra-flutuante);
+  backdrop-filter: blur(14px);
+  user-select: none;
 }
-.react-flow__controls-button {
-  background: var(--panel);
-  border-bottom: 1px solid var(--border-soft);
-  fill: var(--muted);
+.zoom-bar .ib {
+  width: calc(28px * var(--s)); height: calc(28px * var(--s));
+  border-radius: 50%; color: var(--muted);
 }
-.react-flow__controls-button:hover { background: var(--panel-2); fill: var(--text); }
+.zoom-bar .ib svg { width: calc(15px * var(--s)); height: calc(15px * var(--s)); opacity: 1; }
+.zoom-bar .ib:hover { color: var(--text); background: var(--panel-2); border-color: var(--border); }
+/* travado é estado, não hover: acende na cor da marca e fica */
+.zoom-bar .ib.is-on { color: var(--marca); background: color-mix(in srgb, var(--marca) 14%, transparent); }
+.zoom-sep { width: 1px; height: calc(16px * var(--s)); background: var(--border); margin: 0 calc(4px * var(--s)); }
+/* número em mono: muda a cada tique do zoom e em fonte proporcional a largura
+   dançaria, fazendo a barra inteira tremer */
+.zoom-pct {
+  min-width: calc(46px * var(--s)); padding: 0 calc(2px * var(--s));
+  font: 500 calc(11.5px * var(--s)) var(--mono); letter-spacing: -0.02em;
+  color: var(--muted); text-align: center;
+  background: transparent; border: 0; border-radius: calc(8px * var(--s));
+  cursor: pointer;
+}
+.zoom-pct:hover { color: var(--text); background: var(--panel-2); }
 
 /* arestas = cabos curvos tracejados entre estantes. Em repouso, latão
    apagado. Com dado passando, o latão fica incandescente e o traço marcha:
@@ -319,7 +340,7 @@ select:focus-visible, [tabindex]:focus-visible {
 .react-flow__edge.animated .react-flow__edge-path {
   stroke: var(--wire-active);
   stroke-width: 2.5;
-  filter: drop-shadow(0 0 4px rgba(255, 215, 163, 0.5));
+  filter: drop-shadow(0 0 5px rgba(0, 122, 255, 0.55));
   animation: dashdraw 0.55s linear infinite;
 }
 .react-flow__connection-path {
@@ -328,8 +349,7 @@ select:focus-visible, [tabindex]:focus-visible {
 }
 @media (prefers-reduced-motion: reduce) {
   .react-flow__edge.animated .react-flow__edge-path { animation: none; }
-  .island, .island-swap, .sidebar, .sb-name { animation: none; }
-  .sidebar, .sb-item, .sb-badge { transition: none; }
+  .island, .island-swap { animation: none; }
 }
 
 .react-flow__handle {
@@ -353,7 +373,7 @@ select:focus-visible, [tabindex]:focus-visible {
   border-left: 3px solid var(--section, var(--accent));
   border-radius: var(--radius);
   overflow: hidden;
-  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.45);
+  box-shadow: var(--sombra-no);
   animation: node-in 0.18s ease-out;
 }
 .react-flow__node.selected .agent-node { border-color: var(--section, var(--accent)); }
@@ -378,6 +398,7 @@ select:focus-visible, [tabindex]:focus-visible {
 }
 .agent-node.is-exited .agent-lamp { background: var(--exited); box-shadow: none; }
 
+/* rótulo do nó é endereço de rota (⇢NOME:), não texto de UI: mono */
 .agent-label {
   font: 600 12px var(--mono);
   color: var(--muted);
@@ -386,8 +407,8 @@ select:focus-visible, [tabindex]:focus-visible {
 }
 .agent-node.is-exited .agent-label { color: var(--exited); }
 .agent-node.is-exited { border-left-color: var(--exited); }
-/* "saiu" é marcação de estado, não dado: entra na voz de anotação (tacet) */
-.agent-exited-tag { font: italic 400 13px/1 var(--mono); color: var(--exited); margin-left: 5px; }
+/* "saiu" é marcação de estado, não dado: voz do app (sans), peso e cor */
+.agent-exited-tag { font: 500 12px/1 var(--sans); color: var(--exited); margin-left: 5px; }
 
 .agent-actions { display: inline-flex; gap: 2px; }
 .agent-btn {
@@ -398,9 +419,11 @@ select:focus-visible, [tabindex]:focus-visible {
   border-radius: 4px;
 }
 .agent-btn svg { width: 13px; height: 13px; }
-.agent-btn:hover { color: var(--text); background: rgba(234, 228, 218, 0.08); }
+.agent-btn:hover { color: var(--text); background: rgba(255, 255, 255, 0.07); }
 
-.agent-term { flex: 1; min-height: 0; background: #0c0c0e; padding: 6px 2px 4px 8px; }
+/* overflow hidden porque no zoom o .xterm-box cresce z× no layout e volta por
+   transform (ver XtermView): sem isso a caixa maior geraria barra de rolagem */
+.agent-term { flex: 1; min-height: 0; overflow: hidden; background: var(--term-bg); padding: 6px 2px 4px 8px; }
 .agent-node.is-exited .agent-term { opacity: 0.55; }
 .xterm-box { width: 100%; height: 100%; }
 
@@ -409,12 +432,12 @@ select:focus-visible, [tabindex]:focus-visible {
 .note-node {
   width: 100%; height: 100%;
   display: flex; flex-direction: column;
-  background: #14141a;
-  border: 1px solid #2e2e36;
+  background: var(--note-bg);
+  border: 1px solid color-mix(in srgb, var(--score) 40%, var(--border));
   border-left: 3px solid var(--score);
   border-radius: var(--radius);
   overflow: hidden;
-  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.45);
+  box-shadow: var(--sombra-no);
   animation: node-in 0.18s ease-out;
 }
 .react-flow__node.selected .note-node { border-color: var(--score); }
@@ -422,14 +445,13 @@ select:focus-visible, [tabindex]:focus-visible {
 .note-head {
   display: flex; align-items: center; justify-content: space-between;
   padding: 6px 10px;
-  background: #1b1b21;
-  border-bottom: 1px solid #26262d;
+  background: var(--note-head);
+  border-bottom: 1px solid var(--border);
   cursor: grab; user-select: none;
 }
-/* a nota É uma anotação: rótulo em itálico, como um
-   "dolce" escrito a lápis na margem da parte. */
+/* o rótulo da nota é nosso (sans); o corpo é dado do usuário (mono) */
 .note-label {
-  font: italic 500 15px/1 var(--mono);
+  font: 600 14px/1 var(--sans);
   color: var(--score);
   letter-spacing: 0.01em;
 }
@@ -438,22 +460,22 @@ select:focus-visible, [tabindex]:focus-visible {
 .note-area {
   flex: 1; min-height: 0; resize: none;
   background: transparent; border: none; outline: none;
-  color: #e2e2e8;
+  color: var(--note-text);
   padding: 10px 12px;
   font: 13px/1.55 var(--mono);
 }
-/* placeholder é convite, texto digitado é dado: serifa no convite, mono no dado */
-.note-area::placeholder { font: italic 400 14px var(--mono); color: #6d6d77; opacity: 0.9; }
+/* o texto da nota vira contexto de agente: é dado, fica mono */
+.note-area::placeholder { font: italic 400 13px var(--mono); color: var(--muted); opacity: 0.85; }
 
 .agent-role-tag {
-  font: 11px var(--mono); color: var(--accent);
+  font: 11px var(--sans); color: var(--accent);
   border: 1px solid var(--accent-dim); border-radius: 4px;
   padding: 0 5px; margin-left: 4px;
 }
 .agent-btn.is-on { color: var(--accent); }
 /* selo de contextos semeados: mesma família do papel, tom mais frio */
 .agent-ctx-tag {
-  font: 11px var(--mono); color: var(--muted);
+  font: 11px var(--sans); color: var(--muted);
   border: 1px solid var(--border); border-radius: 4px;
   padding: 0 5px; margin-left: 4px;
 }
@@ -461,7 +483,7 @@ select:focus-visible, [tabindex]:focus-visible {
 /* ---- contextos + batuta ----------------------------------------- */
 
 .ctx-pick { cursor: pointer; }
-.ctx-pick.is-marked { border-color: var(--accent-dim); background: rgba(198, 154, 85, 0.06); }
+.ctx-pick.is-marked { border-color: color-mix(in srgb, var(--marca) 45%, transparent); background: color-mix(in srgb, var(--marca) 10%, transparent); }
 .ctx-check { accent-color: var(--accent); width: 14px; height: 14px; flex: 0 0 auto; }
 .ctx-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 10px; }
 .ctx-foot .role-new { margin-top: 0; }
@@ -470,24 +492,24 @@ select:focus-visible, [tabindex]:focus-visible {
 .batuta {
   width: 560px; max-width: 92vw;
   background: var(--panel); border: 1px solid var(--border);
-  border-radius: var(--radius); box-shadow: 0 24px 70px rgba(0, 0, 0, 0.65);
+  border-radius: var(--radius); box-shadow: var(--sombra-modal);
   overflow: hidden;
 }
 .batuta-input {
   width: 100%; box-sizing: border-box; border: 0; outline: 0;
   background: transparent; color: var(--text);
-  font: 14px var(--mono); padding: 14px 16px;
+  font: 14px var(--sans); padding: 14px 16px;
   border-bottom: 1px solid var(--border-soft);
 }
-.batuta-input::placeholder { font: italic 400 15px var(--mono); color: var(--muted); opacity: 0.85; }
+.batuta-input::placeholder { font: 400 14px var(--sans); color: var(--muted); opacity: 0.8; }
 .batuta-list { max-height: 52vh; overflow: auto; padding: 6px; }
 .batuta-item {
   display: flex; align-items: center; gap: 8px; width: 100%;
   background: transparent; border: 0; border-radius: 6px;
-  color: var(--text); font: 12.5px var(--mono); text-align: left;
+  color: var(--text); font: 12.5px var(--sans); text-align: left;
   padding: 7px 8px; cursor: pointer;
 }
-.batuta-item.is-on { background: rgba(198, 154, 85, 0.14); }
+.batuta-item.is-on { background: color-mix(in srgb, var(--marca) 16%, transparent); }
 .batuta-item .ctx-ico { display: inline-flex; width: 15px; height: 15px; color: var(--muted); }
 .batuta-item .ctx-ico svg { width: 15px; height: 15px; }
 .batuta-lbl { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -498,39 +520,76 @@ select:focus-visible, [tabindex]:focus-visible {
 .topbar .picker {
   background: var(--bg); color: var(--text);
   border: 1px solid var(--border); border-radius: var(--radius);
-  padding: 6px 8px; font: 12px var(--mono); cursor: pointer; outline: none;
+  padding: 6px 8px; font: 12px var(--sans); cursor: pointer; outline: none;
 }
 .topbar .picker:hover { border-color: var(--accent-dim); }
 
-/* ---- forma de diagrama ------------------------------------------ */
+/* ---- diagrama (mermaid) -----------------------------------------
+   Mesmo chassi da nota — é irmão dela: nó de texto que o agente escreve.
+   A diferença é que aqui o texto vira desenho, então o corpo é palco
+   claro-escuro neutro e o código só aparece no modal. */
 
-.shape-node {
+.mmd-node {
   width: 100%; height: 100%;
-  display: flex; align-items: center; justify-content: center;
-  background: rgba(40, 34, 30, 0.85);
-  border: 1.5px solid var(--accent-dim);
-  color: var(--text); text-align: center;
-  padding: 6px 10px; position: relative;
+  display: flex; flex-direction: column;
+  background: var(--note-bg);
+  border: 1px solid color-mix(in srgb, var(--accent-dim) 40%, var(--border));
+  border-left: 3px solid var(--accent-dim);
+  border-radius: var(--radius);
+  overflow: hidden;
+  box-shadow: var(--sombra-no);
   animation: node-in 0.18s ease-out;
 }
-.shape-box { border-radius: var(--radius); }
-.shape-pill { border-radius: 999px; }
-.shape-node.is-sel { border-color: var(--accent); }
-.shape-label { font: 500 12px var(--mono); color: var(--muted); pointer-events: none; }
-.shape-input {
-  width: 90%; background: transparent; border: none; outline: none;
-  color: var(--text); text-align: center; font: 500 12px var(--mono);
+.react-flow__node.selected .mmd-node { border-color: var(--accent-dim); }
+.mmd-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 10px;
+  background: var(--note-head);
+  border-bottom: 1px solid var(--border);
+  cursor: grab; user-select: none;
 }
-.shape-node .shape-handle { background: var(--accent-dim); }
-.shape-x {
-  position: absolute; top: 3px; right: 4px;
-  display: inline-flex; align-items: center; justify-content: center;
-  background: transparent; border: none; color: var(--muted);
-  cursor: pointer; opacity: 0; padding: 2px;
+/* rótulo é endereço de rota (⇢diagrama-1:), mesma voz do rótulo do agente */
+.mmd-label { font: 600 14px/1 var(--sans); color: var(--accent-dim); }
+.mmd-node .react-flow__handle { background: var(--accent-dim); }
+.mmd-body {
+  flex: 1; min-height: 0; overflow: auto;
+  display: flex; align-items: center; justify-content: center;
+  padding: 10px;
 }
-.shape-x svg { width: 11px; height: 11px; }
-.shape-node:hover .shape-x { opacity: 1; }
-.shape-x:hover { color: var(--exited); }
+/* o SVG do mermaid vem com width fixo: encolhe pra caber no nó, sem cortar */
+/* o mermaid já põe um max-width inline com o tamanho natural do desenho:
+   width 100% faz o diagrama grande encolher pra caber sem esticar o pequeno */
+.mmd-svg { width: 100%; display: flex; justify-content: center; }
+.mmd-svg svg { width: 100%; height: auto; display: block; }
+.mmd-vazio { font: italic 400 13px var(--mono); color: var(--muted); }
+.mmd-erro {
+  font: 12px/1.5 var(--mono); color: var(--exited);
+  white-space: pre-wrap; word-break: break-word; align-self: flex-start;
+}
+
+/* editor: código à esquerda, desenho à direita */
+.modal.mmd-modal { width: 980px; }
+.mmd-edit {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+  gap: 12px; height: 58vh;
+}
+.mmd-code {
+  background: var(--bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: 4px;
+  padding: 10px 12px; font: 12px/1.6 var(--mono);
+  outline: none; resize: none;
+}
+.mmd-code::placeholder { color: var(--muted); }
+.mmd-code:focus { border-color: var(--accent-dim); }
+.mmd-preview {
+  display: flex; align-items: center; justify-content: center;
+  overflow: auto;
+  background: var(--note-bg); border: 1px solid var(--border); border-radius: 4px;
+  padding: 12px;
+}
+.mmd-erro-linha { white-space: pre-wrap; font: 11px/1.5 var(--mono); margin-top: 10px; }
+.mmd-doc { flex: 1; font: 11px var(--mono); color: var(--muted); align-self: center; }
+.mmd-modal .dialog-actions { align-items: center; margin-top: 12px; }
 
 /* ---- portal (navegador embutido) -------------------------------- */
 
@@ -540,7 +599,7 @@ select:focus-visible, [tabindex]:focus-visible {
   background: var(--panel); border: 1px solid var(--border);
   border-left: 3px solid var(--portal);
   border-radius: var(--radius);
-  overflow: hidden; box-shadow: 0 10px 32px rgba(0, 0, 0, 0.45);
+  overflow: hidden; box-shadow: var(--sombra-no);
   animation: node-in 0.18s ease-out;
 }
 .portal-head {
@@ -549,7 +608,7 @@ select:focus-visible, [tabindex]:focus-visible {
   border-bottom: 1px solid var(--border-soft); cursor: grab;
 }
 .portal-label {
-  font: 600 10px var(--mono); color: var(--portal);
+  font: 600 10px var(--sans); color: var(--portal);
   letter-spacing: 0.18em; text-transform: uppercase;
   padding: 0 5px; flex: none; user-select: none;
 }
@@ -565,22 +624,22 @@ select:focus-visible, [tabindex]:focus-visible {
 
 .modal-backdrop {
   position: fixed; inset: 0; z-index: 20;
-  background: rgba(0, 0, 0, 0.55);
+  background: var(--scrim);
   display: flex; align-items: center; justify-content: center;
 }
 .modal {
   width: 460px; max-width: 92vw; max-height: 82vh; overflow: auto;
   background: var(--panel); border: 1px solid var(--border);
   border-radius: var(--radius); padding: 16px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+  box-shadow: var(--sombra-modal);
 }
 .modal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
 /* título do modal na voz de anotação, igual ao do diálogo */
-.modal-head b { font: italic 500 19px/1.1 var(--mono); font-weight: 500; letter-spacing: 0.01em; }
+.modal-head b { font: 600 19px/1.1 var(--sans); letter-spacing: -0.02em; }
 .modal-err { color: var(--exited); font-size: 12px; margin-bottom: 8px; }
 .role-list { display: flex; flex-direction: column; gap: 6px; }
 /* tela vazia é convite, não bilhete de sistema */
-.role-empty, .portal-empty { font: italic 400 14px/1.5 var(--mono); color: var(--muted); }
+.role-empty, .portal-empty { font: 400 14px/1.5 var(--sans); color: var(--muted); }
 .role-empty { padding: 8px 2px; }
 .role-row {
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
@@ -594,10 +653,11 @@ select:focus-visible, [tabindex]:focus-visible {
   margin-top: 12px; width: 100%;
   background: transparent; border: 1px dashed var(--border);
   color: var(--muted); border-radius: var(--radius);
-  padding: 8px; cursor: pointer; font: 12px var(--mono);
+  padding: 8px; cursor: pointer; font: 12px var(--sans);
 }
 .role-new:hover { border-color: var(--accent-dim); color: var(--text); }
 .role-form { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+/* o corpo do papel é markdown com {{var}} — editor, não formulário: mono */
 .role-form input, .role-form textarea {
   background: var(--bg); color: var(--text);
   border: 1px solid var(--border); border-radius: 4px;
@@ -606,7 +666,7 @@ select:focus-visible, [tabindex]:focus-visible {
 .role-form-actions { display: flex; justify-content: flex-end; gap: 6px; }
 .modal button, .role-actions button {
   background: transparent; border: 1px solid var(--border); color: var(--text);
-  border-radius: 4px; padding: 5px 10px; cursor: pointer; font: 12px var(--mono);
+  border-radius: 4px; padding: 5px 10px; cursor: pointer; font: 12px var(--sans);
 }
 .modal .btn-claude { border-color: var(--accent-dim); color: var(--accent); }
 .modal button:hover { border-color: var(--accent-dim); }
@@ -615,8 +675,8 @@ select:focus-visible, [tabindex]:focus-visible {
 /* ---- boas-vindas (primeiro uso) --------------------------------- */
 .wc { width: 520px; }
 .wc-hero { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
-.wc-mark { font: 600 11px var(--mono); letter-spacing: 0.16em; color: var(--muted); text-transform: uppercase; }
-.wc-mark i { color: var(--marca); font-style: italic; }
+.wc-mark { font: 600 11px var(--sans); letter-spacing: 0.16em; color: var(--muted); text-transform: uppercase; }
+.wc-mark i { color: var(--marca); font-style: normal; }
 .wc-item { display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; border-top: 1px solid var(--border-soft); }
 .wc-dot {
   flex: none; width: 18px; height: 18px; border-radius: 50%; margin-top: 1px;
@@ -635,26 +695,28 @@ select:focus-visible, [tabindex]:focus-visible {
 .wc-fix span { color: var(--muted); font-size: 11px; }
 .wc code, .wc-fix code {
   background: var(--panel-2); color: var(--accent); border: 1px solid var(--border-soft);
-  border-radius: 3px; padding: 4px 7px; font-size: 12px; word-break: break-all; user-select: all;
+  border-radius: 5px; padding: 4px 7px; word-break: break-all; user-select: all;
+  font: 12px var(--mono); /* é comando pra copiar e colar: explicitamente mono */
 }
 .wc-note { color: var(--muted); font-size: 11px; line-height: 1.5; margin: 12px 0 4px; }
 
 /* ---- dialog (prompt/confirm custom) ----------------------------- */
 
 .dialog { width: 400px; }
-.dialog-title { font: italic 500 19px/1.1 var(--mono); letter-spacing: 0.01em; margin-bottom: 10px; }
+.dialog-title { font: 600 19px/1.1 var(--sans); letter-spacing: -0.02em; margin-bottom: 10px; }
 /* o corpo explica o que vai acontecer: mono, porque quase sempre cita rótulo,
    caminho ou comando — serifa itálica em prosa longa cansa e mente sobre o tipo */
 .dialog-msg { color: var(--muted); font-size: 12px; line-height: 1.55; margin-bottom: 16px; }
 .dialog-field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 12px; }
-/* marca de ensaio: caps miúdo com tracking largo, mesma família da .sb-title */
+/* marca de ensaio: caps miúdo com tracking largo */
 .dialog-field span {
-  font: 600 10px var(--mono); text-transform: uppercase;
+  font: 600 10px var(--sans); text-transform: uppercase;
   letter-spacing: 0.18em; color: var(--muted);
 }
 .dialog-field input {
   background: var(--bg); color: var(--text);
   border: 1px solid var(--border); border-radius: var(--radius);
+  /* quase sempre um rótulo de rota ou slug de branch: mono */
   padding: 8px 10px; font: 13px var(--mono); outline: none;
 }
 .dialog-field input:focus { border-color: var(--accent-dim); }
@@ -667,7 +729,7 @@ select:focus-visible, [tabindex]:focus-visible {
   to { opacity: 1; transform: scale(1); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .agent-node, .note-node, .shape-node, .portal-node { animation: none; }
+  .agent-node, .note-node, .mmd-node, .portal-node { animation: none; }
   .topbar button { transition: none; }
 }
 
@@ -676,18 +738,16 @@ select:focus-visible, [tabindex]:focus-visible {
    Texto (I-beam) e grab/grabbing ficam nativos. */
 html, body { cursor: var(--cursor-arrow), default; }
 button, select, a, label,
-.sb-item, .sb-add, .sb-toggle, .ctx-item, .agent-btn, .ib,
-.shape-x, .role-new, .role-row button, .modal button,
-.react-flow__controls-button, .react-flow__handle {
+.ctx-item, .agent-btn, .ib, .ib-ws,
+.role-new, .role-row button, .modal button,
+.zoom-pct, .react-flow__handle {
   cursor: var(--cursor-pointer), pointer;
 }
 .react-flow__pane { cursor: var(--cursor-arrow), default; }
 
-/* ---- ícones da @edusites/icons + presets de papel ---------------- */
-.icone { display: inline-flex; align-items: center; justify-content: center; line-height: 0; }
-.icone svg { display: block; }
+/* ---- presets de papel -------------------------------------------- */
 .role-presets-title {
-  font: 600 10px var(--mono); letter-spacing: 0.18em; text-transform: uppercase;
+  font: 600 10px var(--sans); letter-spacing: 0.18em; text-transform: uppercase;
   color: var(--muted); padding: 10px 2px 2px;
 }
 .role-row.is-preset { border-style: dashed; }

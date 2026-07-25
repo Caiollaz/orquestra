@@ -4,9 +4,30 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Orquestra — desktop agent orchestrator (Tauri 2). Infinite canvas of draggable nodes; each node is an **interactive PTY terminal** running `claude` or a shell. Model inspired by [Maestri](https://www.themaestri.app). Codebase and UI are in **Portuguese (pt-BR)** — match that in comments/UI strings.
+Orquestra — desktop agent orchestrator (Tauri 2). Infinite canvas of draggable
+nodes; each node is an **interactive PTY terminal** running an agent CLI
+(`claude`, `codex`, `opencode`, `antigravity`) or a shell, and the agents talk to
+each other. Model inspired by [Maestri](https://www.themaestri.app).
 
-Design rationale, milestones (M0–M6), and the data model live in `PLAN.md`. Read it before non-trivial work.
+**Codebase, UI and commits are in Portuguese (pt-BR)** — match that.
+
+## The docs live in `.orquestra/contexts/`
+
+That directory is this project's real documentation, and the app **seeds those
+files into every agent it spawns**. So: one fact, one owner. Don't restate them
+here or in a new `docs/` file — fix the context instead.
+
+| Read this | When |
+|---|---|
+| `regras-de-negocio.md` | always — the 11 rules the product doesn't break |
+| `arquitetura.md` | orienting: module map, data flow, who owns state |
+| `protocolo.md` | anything touching `⇢NOME:`, seeding, echo, labels |
+| `contratos.md` | anything spanning Rust↔JS, persistence, spawning |
+| `receitas.md` | adding a command, node type, agent CLI, preset, dialog |
+| `armadilhas.md` | before "simplifying" something — past bugs, don't regress |
+
+`docs/PRE-REQUISITOS.md` is user-facing (installing the CLIs). `ROADMAP.md` is
+status + what's next.
 
 ## Commands
 
@@ -14,60 +35,35 @@ Uses **pnpm**. In a GUI-less shell `pnpm` may not be on PATH — it lives in
 `~/.nvm/versions/node/<ver>/bin`.
 
 - `pnpm tauri dev` — run the app (Tauri spawns `pnpm dev` / Vite on fixed port 1420).
-- `pnpm build` — `tsc && vite build` (frontend only; type-checks then bundles to `dist/`).
+- `pnpm build` — `tsc && vite build`. No lint step; `tsc` is the type gate.
 - `pnpm tauri build` — full desktop bundle.
-- `cd src-tauri && cargo test` — Rust unit tests (pure functions + integration).
-- Single Rust test: `cd src-tauri && cargo test agent_cmd_contrato_front` (or any test name).
+- `cd src-tauri && cargo test` — 22 Rust tests. Single: `cargo test agent_cmd_contrato_front`.
 
-## Architecture
+Before committing: `cargo test` + `pnpm build`. There are no frontend tests —
+verify UI in `pnpm tauri dev`.
 
-Rust backend (`src-tauri/src/`) exposes Tauri commands; React 19 + TS frontend (`src/`) drives them. All commands are registered in `lib.rs`; the JS wrappers live in `src/lib/tauri.ts`.
+**Release:** bump the version in four files that must agree (`package.json`,
+`src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`),
+then tag `v<version>`; CI builds the installers.
 
-### Roles vs contexts (don't conflate them)
+## Top invariants (the rest is in the contexts)
 
-Two separate primitives, both markdown seeded into an agent's stdin:
+1. **`.orquestra/roles/` and `contexts/` are versioned**; everything else under
+   `.orquestra/` (worktrees, `board.md`) is ignored.
+2. **Never `git add -A`** — more than one agent edits this repo at once. Stage
+   by file, and check `.orquestra/board.md` before starting.
+3. Any new path that sends text into an agent must go through
+   `forward_output_to` (which filters via `bracketed_safe`) **and** call
+   `rememberSent` first, or a context documenting the `⇢` protocol executes for
+   real. See `protocolo.md`.
+4. Never offer role/context seeding on a shell node: markdown would run as
+   commands. `isLLM(cmd)` is the single place that distinction lives.
+5. Changing `AgentCmd` means changing `pty.rs`, `src/lib/tauri.ts` **and** the
+   `agent_cmd_contrato_front` test.
 
-- **Role** (`roles.rs`, `<repo>/.orquestra/roles/*.md`) — *who the agent is*. One
-  per agent. Frontmatter `name/agent/description`. Applied via `apply_role`.
-- **Context** (`contexts.rs`, `<repo>/.orquestra/contexts/*.md`) — *what it needs
-  to know* (business rules, architecture, contracts). Several per agent,
-  stackable. Frontmatter optional: without it the first `# heading` becomes the
-  name. Applied via `apply_contexts`, which composes **all blocks into one
-  submission** — two bracketed-pastes back to back trample each other in
-  claude's prompt.
+## Writing code here
 
-A workspace has **default contexts** (`canvas.defaultContexts`): every new claude
-agent gets them automatically on its *second* idle (the first carries the
-`⇢NOME:` protocol prompt). That ordering is the whole point — don't merge them.
-
-`.orquestra/roles/` and `.orquestra/contexts/` are **versioned**; everything else
-under `.orquestra/` (worktrees, `board.md`) is ignored.
-
-### PTY lifecycle (`pty.rs` + `XtermView.tsx`)
-
-- `spawn_agent` opens a PTY, spawns the command, and starts **one dedicated OS thread per agent** (blocking `read` of 16KB) that streams raw bytes to the frontend via a Tauri `Channel<Vec<u8>>`. xterm writes them directly.
-- Terminal instances live **outside React**, in module-level Maps in `src/shared.ts` (`terminals`, `noteText`) — the send button reads a node's live selection from there.
-- Cleanup is layered: unmounting `XtermView` calls `kill_agent`; closing the app fires `RunEvent::ExitRequested` → `PtyState::kill_all()`. No orphaned child processes.
-- **PATH augmentation** (`augmented_path`): GUI apps don't inherit the login shell's PATH, so `claude` in `~/.local/bin` etc. won't resolve. The augmented PATH is both used to resolve the program *and* passed as `PATH` env to the child, so claude's own subprocesses see it too.
-
-### IPC contract (must stay in sync)
-
-`AgentCmd` is a serde enum with `#[serde(tag = "kind", rename_all = "camelCase")]` in `pty.rs`. Its JSON shape (`{"kind":"shell","program":null}` / `{"kind":"claude","extra_args":[]}`) is mirrored by hand in `src/lib/tauri.ts` and guarded by the `agent_cmd_contrato_front` test. Change one side → update the other and that test. Same camelCase convention applies to `Workspace`/`Agent`/`Role`/`Floor` structs.
-
-### Inter-agent communication (`forward_output`)
-
-`forward_output_to` writes text to a target agent's stdin wrapped in **bracketed-paste** (`\x1b[200~…\x1b[201~\r`) so it lands as a single submission. Node→node forwarding, `apply_role` and `apply_contexts` all route through this one function.
-
-Text is passed through `bracketed_safe` first, which strips control characters. A `\x1b[201~` inside the payload would close the paste early and the remainder would land as **raw keystrokes** in the target terminal — command injection from another agent's output, a note, or a context file. Keep that filter on any new path into `forward_output_to`.
-
-Labels are **routing addresses** (`⇢NOME: msg`), so renaming a node has to tell the node itself and every claude pointing at it (`renameNode` in App.tsx), otherwise messages go to a name nobody answers to.
-
-### Persistence & filesystem layout
-
-- Workspaces: `~/.orquestra/` — `index.json` (list) + `workspaces/<id>.json` (full state incl. layout). `workspace.rs`. Override the base dir with the `ORQUESTRA_HOME` env var (tests use it — and it's process-global, so tests that set it share a `Mutex`). Writes are atomic (tmp + rename): autosave fires every 1.2s and a truncated file would cost the user the whole canvas.
-- Roles: `<repo>/.orquestra/roles/*.md` — markdown with `name`/`agent`/`description` frontmatter + body with `{{var}}` placeholders. `roles.rs`.
-- Floors: git **worktrees** at `<repo>/.orquestra/worktrees/<slug>` on branch `orquestra/<slug>`. Git is invoked as a subprocess (`git.rs`), not a library. `remove_floor` refuses to delete a floor with uncommitted work unless `force` is passed explicitly.
-
-### Tested pure functions
-
-`slugify`, `render_template`, `parse_role`, `split_frontmatter`, `file_ok` (`roles.rs`); `parse_context`, `compose_contexts` (`contexts.rs`); `branch_name`, `worktree_path`, `pending_changes` (`git.rs`); `bracketed_safe` (`pty.rs`); workspace roundtrip + atomic write (`workspace.rs`). 21 tests today. Keep new pure logic testable in the same style — the ported logic (from the prior `agentdesk` project) is validated here, not just in the app.
+Match the surrounding style: dense pt-BR comments that explain **why** (the
+tradeoff, the bug this prevents), not what. New pure logic gets a test in the
+style of `roles.rs`/`git.rs` — the logic ported from the prior `agentdesk`
+project is validated here, not just in the app.

@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
   ReactFlow,
   Background,
-  Controls,
   addEdge,
   applyNodeChanges,
   applyEdgeChanges,
@@ -20,14 +19,22 @@ import {
 import "@xyflow/react/dist/style.css";
 import { AgentNode, type AgentNodeData } from "./AgentNode";
 import { NoteNode, type NoteNodeData } from "./NoteNode";
-import { ShapeNode, type ShapeNodeData } from "./ShapeNode";
+import { MermaidNode, type MermaidNodeData } from "./MermaidNode";
+import { MermaidEditor } from "./MermaidEditor";
 import { PortalNode, type PortalNodeData } from "./PortalNode";
 import { RolePicker } from "./RolePicker";
 import { ContextPicker } from "./ContextPicker";
 import { Batuta, type BatutaItem } from "./Batuta";
-import { Sidebar, folderName } from "./Sidebar";
 import { Island, islandNotify } from "./Island";
-import { Icone } from "./Icone";
+import { Controles } from "./Controles";
+import {
+  PiFolder, PiTerminalWindow, PiNote, PiTreeStructure, PiGlobeHemisphereWest,
+  PiCode, PiFloppyDisk, PiStack, PiTrash, PiPencilSimple, PiClockCountdown,
+  PiTarget, PiPaperPlaneTilt, PiFileText, PiMusicNotes, PiRobot, PiTerminal,
+  PiFolderOpen, PiFolderPlus, PiCaretDown, PiSun, PiMoonStars,
+} from "react-icons/pi";
+import { SiClaude, SiGooglegemini } from "react-icons/si";
+import { RiOpenaiFill } from "react-icons/ri";
 import { ContextMenu, type MenuState, type MenuItem } from "./ContextMenu";
 import { DialogHost, askText, askConfirm, alertMsg } from "./Dialog";
 import { Welcome, jaViuBoasVindas } from "./Welcome";
@@ -37,53 +44,66 @@ import {
   listContexts, applyContexts,
   type AgentCmd, type Role, type Floor, type WorkspaceMeta, type WsAgent, type Workspace, type CanvasState, type Context,
 } from "./lib/tauri";
-import { terminals, noteText } from "./shared";
+import { terminals, noteText, folderName } from "./shared";
+import { ROTA, rotaKey, blocoDaRota } from "./protocolo";
+import { aplicaTema, temaSalvo, type Tema } from "./tema";
 import "./App.css";
 
-const nodeTypes: NodeTypes = { agent: AgentNode, note: NoteNode, shape: ShapeNode, portal: PortalNode };
+const nodeTypes: NodeTypes = { agent: AgentNode, note: NoteNode, mermaid: MermaidNode, portal: PortalNode };
 let seq = 0;
 
-// linha de rota do protocolo: "⇢destino: mensagem", tolerando bullets do TUI
-const ROTA = /^[\s⏺●•>*-]*⇢\s*([^\s:]+)\s*:\s*(.+)$/u;
-const rotaKey = (dest: string, msg: string) => `${dest.toLowerCase()} :: ${msg.trim()}`;
 // por quanto tempo uma rota que NÓS enviamos é tratada como eco (redraw do TUI)
 const ECO_MS = 120_000;
 
 // naipes: cada agente novo pega a próxima cor — é a única cor do app, serve
 // pra distinguir nó de relance sobre a base neutra
-const SECTIONS = ["#58a6ff", "#3fb950", "#e3b341", "#db6e8c"];
+const SECTIONS = ["#007aff", "#3fb950", "#ffa500", "#db6e8c"];
+
+// diagrama nasce com um exemplo curto: em branco não ensina a sintaxe
+const MMD_EXEMPLO = "flowchart LR\n  A[cliente] --> B[api] --> C[(banco)]";
 
 // LLM = recebe protocolo/contextos/notas por prosa (claude ou agente CLI
 // genérico); shell recebe comando cru
 const isLLM = (cmd: AgentCmd) => cmd.kind === "claude" || cmd.kind === "agent";
 
-// agentes CLI integrados além do claude (spawn resolve pelo PATH do usuário)
-const CLIS = [
-  { program: "codex", label: "codex", hint: "OpenAI Codex CLI" },
-  { program: "opencode", label: "opencode", hint: "OpenCode" },
-  { program: "agy", label: "antigravity", hint: "Antigravity CLI" },
-] as const;
+// Os CLIs de agente. O claude entra aqui como UM entre vários: o produto é um
+// canvas de agentes, não um front pro claude. Só ele tem variante própria no
+// IPC (AgentCmd::Claude); o resto é AgentCmd::Agent { program }, resolvido pelo
+// PATH do usuário. Este array é a única fonte da lista — island, menu de
+// contexto e batuta todos leem daqui.
+const CLIS: { label: string; hint: string; icon: ReactNode; mk: () => AgentCmd }[] = [
+  { label: "claude", hint: "Claude Code", icon: <SiClaude />, mk: () => ({ kind: "claude", extra_args: [] }) },
+  { label: "codex", hint: "OpenAI Codex CLI", icon: <RiOpenaiFill />, mk: () => ({ kind: "agent", program: "codex", extra_args: [] }) },
+  { label: "opencode", hint: "OpenCode", icon: <PiTerminal />, mk: () => ({ kind: "agent", program: "opencode", extra_args: [] }) },
+  { label: "antigravity", hint: "Antigravity CLI", icon: <SiGooglegemini />, mk: () => ({ kind: "agent", program: "agy", extra_args: [] }) },
+];
 
-// ícones da @edusites/icons (herda cor via currentColor; tamanho vem do CSS).
-// claude fica com o desenho próprio: é a fagulha da marca, não um ícone genérico.
+// ícones Phosphor (react-icons/pi) — herdam cor via currentColor; o tamanho
+// vem do CSS (`.ib svg`, `.ctx-ico svg`). Marcas ficam com o logo real
+// (react-icons/si): agente não é um robô genérico, é aquele agente.
 const icons = {
-  folder: <Icone nome="pasta" />,
-  shell: <Icone nome="terminal-cli" />,
-  claude: <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden><path d="M12 2l1.8 6.6L19 4.9l-3.6 5.7L22 12l-6.6 1.4L19 19.1l-5.2-3.7L12 22l-1.8-6.6L5 19.1l3.6-5.7L2 12l6.6-1.4L5 4.9l5.2 3.7Z" /></svg>,
-  note: <Icone nome="notas" />,
-  shape: <Icone nome="grafico-arvore" />,
-  portal: <Icone nome="globo" />,
-  code: <Icone nome="codigo" />,
-  save: <Icone nome="salvar" />,
-  layers: <Icone nome="quadrados" />,
-  trash: <Icone nome="lixeira" />,
-  edit: <Icone nome="editar" />,
-  clock: <Icone nome="relogio" />,
-  role: <Icone nome="alvo" />,
-  send: <Icone nome="enviar" />,
-  context: <Icone nome="documento-linhas" />,
-  batuta: <Icone nome="nota-musical" />,
-  robo: <Icone nome="robo" />,
+  folder: <PiFolder />,
+  shell: <PiTerminalWindow />,
+  claude: <SiClaude />,
+  note: <PiNote />,
+  diagrama: <PiTreeStructure />,
+  portal: <PiGlobeHemisphereWest />,
+  code: <PiCode />,
+  save: <PiFloppyDisk />,
+  layers: <PiStack />,
+  trash: <PiTrash />,
+  edit: <PiPencilSimple />,
+  clock: <PiClockCountdown />,
+  role: <PiTarget />,
+  send: <PiPaperPlaneTilt />,
+  context: <PiFileText />,
+  batuta: <PiMusicNotes />,
+  robo: <PiRobot />,
+  folderOpen: <PiFolderOpen />,
+  folderPlus: <PiFolderPlus />,
+  caret: <PiCaretDown />,
+  sol: <PiSun />,
+  lua: <PiMoonStars />,
 };
 
 export default function App() {
@@ -165,9 +185,12 @@ export default function App() {
   const wsIdRef = useRef("");
   wsIdRef.current = wsId;
   const [wsName, setWsName] = useState("");
-  const [collapsed, setCollapsed] = useState(false);
+  const [tema, setTema] = useState<Tema>(temaSalvo);
+  // canvas travado: navega (pan/zoom) mas não move, liga nem seleciona nó
+  const [travado, setTravado] = useState(false);
 
   const [roleTarget, setRoleTarget] = useState<string | null>(null);
+  const [mmdTarget, setMmdTarget] = useState<string | null>(null); // diagrama aberto no editor
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [batuta, setBatuta] = useState(false);
   const [welcome, setWelcome] = useState(!jaViuBoasVindas());
@@ -231,7 +254,8 @@ export default function App() {
     const kind =
       tgt.type === "note" ? "uma nota — escreva nela com ⇢nota: texto"
       : tgt.type === "portal" ? `um navegador — ⇢${(tgt.data as PortalNodeData).label}: URL navega o navegador até a URL`
-      : tgt.type !== "agent" ? "uma forma de diagrama (sem interação)"
+      : tgt.type === "mermaid" ? `um diagrama mermaid — ⇢${(tgt.data as MermaidNodeData).label}: seguido do código mermaid (pode ocupar várias linhas, até uma linha em branco) redesenha o diagrama`
+      : tgt.type !== "agent" ? "um nó sem interação"
       : (tgt.data as AgentNodeData).cmd.kind === "shell"
         ? `um terminal shell — ⇢${(tgt.data as AgentNodeData).label}: comando executa o comando LÁ, não rode você mesmo`
         : `um agente — fale com ele via ⇢${(tgt.data as AgentNodeData).label}: mensagem`;
@@ -375,10 +399,11 @@ export default function App() {
     }
     const targets = edgesRef.current.filter((e) => e.source === id).map((e) => e.target);
     if (!targets.length) return;
-    for (const line of lines) {
-      const m = line.match(ROTA);
+    for (let i = 0; i < lines.length; i++) {
+      const m = lines[i].match(ROTA);
       if (!m) continue;
-      const [, dest, msg] = m;
+      const [, dest] = m;
+      let msg = m[2];
       // eco do que nós mesmos semeamos/encaminhamos: dentro da janela, não roteia
       const eco = sentRef.current.get(id);
       const ate = eco?.get(rotaKey(dest, msg));
@@ -398,10 +423,23 @@ export default function App() {
         dest === "todos"
           ? targets
           : targets.filter((t) => (nodesRef.current.find((n) => n.id === t)?.data as { label?: string } | undefined)?.label === dest);
+      // Mermaid é multilinha e o ⇢ só cabe na primeira: quando o destino é um
+      // diagrama, o resto do bloco vem junto (ver protocolo.ts).
+      if (wanted.some((t) => nodesRef.current.find((n) => n.id === t)?.type === "mermaid")) {
+        const bloco = blocoDaRota(lines, i);
+        msg = bloco.msg;
+        i = bloco.fim;
+      }
       wanted.forEach((t) => {
         const tn = nodesRef.current.find((n) => n.id === t);
         if (!tn) return;
         flashEdge(id, t);
+        // diagrama não tem PTY: a mensagem é o código mermaid e SUBSTITUI o
+        // desenho (dois diagramas concatenados não compilam)
+        if (tn.type === "mermaid") {
+          window.dispatchEvent(new CustomEvent("diagram-write", { detail: { id: t, src: msg } }));
+          return;
+        }
         // portal não tem PTY: a mensagem é uma URL → navega
         if (tn.type === "portal") {
           const u = msg.trim().replace(/^<|>$/g, "");
@@ -539,14 +577,12 @@ export default function App() {
     setNodes((ns) => [...ns, { id, type: "note", position: pos ?? { x: 60, y: 60 + ns.length * 40 }, width: 280, height: 180, data: noteData() }]);
     dirty();
   };
-  const setShapeLabel = useCallback((id: string, label: string) => {
-    setNodes((ns) => ns.map((n) => (n.id === id ? { ...n, data: { ...n.data, label } } : n)));
-    dirty();
-  }, [dirty]);
-  const addShape = (variant: ShapeNodeData["variant"], pos?: XYPosition) => {
-    const id = `shape-${++seq}`;
-    const data: ShapeNodeData = { label: "", variant, onKill: killNode, onLabel: setShapeLabel };
-    setNodes((ns) => [...ns, { id, type: "shape", position: pos ?? { x: 120 + ns.length * 24, y: 120 + ns.length * 24 }, width: 160, height: 64, data }]);
+  const mermaidData = (label: string): MermaidNodeData =>
+    ({ label, onKill: killNode, onSend: sendFrom, onEdit: setMmdTarget, onDirty: dirty });
+  const addMermaid = (pos?: XYPosition) => {
+    const id = `mermaid-${++seq}`;
+    noteText.set(id, MMD_EXEMPLO);
+    setNodes((ns) => [...ns, { id, type: "mermaid", position: pos ?? { x: 120 + ns.length * 24, y: 120 + ns.length * 24 }, width: 360, height: 240, data: mermaidData(nextLabel("diagrama")) }]);
     dirty();
   };
   const setPortalUrl = useCallback((id: string, url: string) => {
@@ -615,7 +651,7 @@ export default function App() {
             } };
           }
           case "note": return { ...base, data: { text: noteText.get(n.id) ?? "" } };
-          case "shape": return { ...base, data: { label: d.label ?? "", variant: d.variant ?? "box" } };
+          case "mermaid": return { ...base, data: { label: d.label ?? "", src: noteText.get(n.id) ?? "" } };
           case "portal": return { ...base, data: { label: d.label ?? "", url: d.url ?? "" } };
           default: return { ...base, data: {} };
         }
@@ -688,8 +724,14 @@ export default function App() {
             case "note":
               noteText.set(cn.id, String(d.text ?? ""));
               return { ...base, data: noteData() };
+            case "mermaid":
+              noteText.set(cn.id, String(d.src ?? ""));
+              return { ...base, data: mermaidData(String(d.label ?? cn.id)) };
+            // workspace salvo antes do mermaid: a caixa com rótulo vira um
+            // diagrama de um nó só, pra ninguém perder o desenho antigo
             case "shape":
-              return { ...base, data: { label: String(d.label ?? ""), variant: (d.variant as ShapeNodeData["variant"]) ?? "box", onKill: killNode, onLabel: setShapeLabel } satisfies ShapeNodeData };
+              noteText.set(cn.id, `flowchart LR\n  n["${String(d.label ?? "forma").replace(/"/g, "'")}"]`);
+              return { ...base, type: "mermaid", width: Math.max(cn.w ?? 0, 300), height: Math.max(cn.h ?? 0, 180), data: mermaidData(`diagrama-${cn.id}`) };
             case "portal":
               return { ...base, data: { label: String(d.label ?? ""), url: String(d.url ?? ""), onKill: killNode, onUrl: setPortalUrl } satisfies PortalNodeData };
             default:
@@ -757,28 +799,46 @@ export default function App() {
     refreshWs();
   };
 
-  // ── menus de contexto (click direito) ───────────────────────────
-  const wsContext = (e: React.MouseEvent, ws: WorkspaceMeta) => {
-    e.preventDefault();
-    setMenu({ x: e.clientX, y: e.clientY, items: [
-      { label: "Abrir", icon: icons.folder, onClick: () => openWs(ws.id) },
-      { label: "Abrir no editor", icon: icons.code, onClick: () => { void openEditor(ws.repoPath).catch((err) => alertMsg("Erro ao abrir editor", String(err))); } },
-      { sep: true },
-      { label: "Renomear", icon: icons.edit, onClick: () => renameWs(ws) },
-      { label: "Remover", danger: true, icon: icons.trash, onClick: () => removeWs(ws) },
-    ] });
+  // ── workspaces ──────────────────────────────────────────────────
+  // O gerenciamento todo vive num menu ancorado na Island (era uma sidebar
+  // fixa comendo 236px do canvas): trocar, abrir pasta, renomear, remover.
+  const wsMenu = (x: number, y: number) => {
+    const ativo = workspaces.find((w) => w.id === wsId);
+    const items: MenuItem[] = workspaces.map((w) => ({
+      label: `${w.id === wsId ? "✓ " : ""}${folderName(w)}`,
+      icon: w.id === wsId ? icons.folderOpen : icons.folder,
+      onClick: () => { if (w.id !== wsId) void openWs(w.id); },
+    }));
+    if (items.length) items.push({ sep: true });
+    items.push({ label: "Abrir pasta…", icon: icons.folderPlus, onClick: () => void newWorkspaceFromFolder() });
+    if (ativo) {
+      items.push(
+        { sep: true },
+        { label: "Abrir no editor", icon: icons.code, onClick: () => { void openEditor(ativo.repoPath).catch((err) => alertMsg("Erro ao abrir editor", String(err))); } },
+        { label: "Renomear…", icon: icons.edit, onClick: () => void renameWs(ativo) },
+        { label: "Remover", danger: true, icon: icons.trash, onClick: () => void removeWs(ativo) },
+      );
+    }
+    setMenu({ x, y, items, daIsland: true });
   };
+
+  const trocaTema = () => {
+    const t: Tema = tema === "escuro" ? "claro" : "escuro";
+    setTema(t);
+    aplicaTema(t);
+  };
+
+  // ── menus de contexto (click direito) ───────────────────────────
 
   const paneContext = (e: React.MouseEvent | MouseEvent) => {
     e.preventDefault();
     const pos = rfRef.current?.screenToFlowPosition({ x: e.clientX, y: e.clientY }) ?? { x: 0, y: 0 };
     setMenu({ x: e.clientX, y: e.clientY, items: [
       { label: "Terminal shell", icon: icons.shell, onClick: () => addAgent({ kind: "shell", program: null }, "shell", pos) },
-      { label: "Agente claude", icon: icons.claude, onClick: () => addAgent({ kind: "claude", extra_args: [] }, "claude", pos) },
-      ...CLIS.map((c) => ({ label: `Agente ${c.label}`, icon: icons.robo, onClick: () => addAgent({ kind: "agent", program: c.program, extra_args: [] }, c.label, pos) })),
+      ...CLIS.map((c) => ({ label: `Agente ${c.label}`, icon: c.icon, onClick: () => addAgent(c.mk(), c.label, pos) })),
       { label: "Bloco de contexto", icon: icons.note, onClick: () => addNote(pos) },
       { sep: true },
-      { label: "Forma (diagrama)", icon: icons.shape, onClick: () => addShape("box", pos) },
+      { label: "Diagrama (mermaid)", icon: icons.diagrama, onClick: () => addMermaid(pos) },
       { label: "Portal (navegador)", icon: icons.portal, onClick: () => addPortal(pos) },
     ] });
   };
@@ -815,10 +875,9 @@ export default function App() {
   const batutaItems = (): BatutaItem[] => {
     const it: BatutaItem[] = [
       { id: "n-shell", group: "criar", label: "Terminal shell", icon: icons.shell, run: () => addAgent({ kind: "shell", program: null }, "shell", centerPos()) },
-      { id: "n-claude", group: "criar", label: "Agente claude", icon: icons.claude, run: () => addAgent({ kind: "claude", extra_args: [] }, "claude", centerPos()) },
-      ...CLIS.map((c) => ({ id: `n-${c.program}`, group: "criar", label: `Agente ${c.label}`, hint: c.hint, icon: icons.robo, run: () => addAgent({ kind: "agent", program: c.program, extra_args: [] }, c.label, centerPos()) })),
+      ...CLIS.map((c) => ({ id: `n-${c.label}`, group: "criar", label: `Agente ${c.label}`, hint: c.hint, icon: c.icon, run: () => addAgent(c.mk(), c.label, centerPos()) })),
       { id: "n-note", group: "criar", label: "Bloco de contexto", icon: icons.note, run: () => addNote(centerPos()) },
-      { id: "n-shape", group: "criar", label: "Forma (diagrama)", icon: icons.shape, run: () => addShape("box", centerPos()) },
+      { id: "n-mermaid", group: "criar", label: "Diagrama (mermaid)", icon: icons.diagrama, run: () => addMermaid(centerPos()) },
       { id: "n-portal", group: "criar", label: "Portal (navegador)", icon: icons.portal, run: () => addPortal(centerPos()) },
       { id: "a-ctx", group: "contextos", label: "Gerenciar contextos", icon: icons.context, run: () => setCtxTarget(null) },
       { id: "a-save", group: "workspace", label: "Salvar workspace", icon: icons.save, run: () => void doSave() },
@@ -879,31 +938,34 @@ export default function App() {
 
   return (
     <div className="app">
-      <Sidebar
-        workspaces={workspaces}
-        activeId={wsId}
-        collapsed={collapsed}
-        onOpen={openWs}
-        onAddFolder={newWorkspaceFromFolder}
-        onContext={wsContext}
-        onToggle={() => setCollapsed((c) => !c)}
-      />
       <main className="main">
         <Island
+          pinned={!!menu?.daIsland}
           pill={
             <span className="island-id island-pill" title={cwd}>
               <span className="island-brand">or<span className="brand-q">q</span></span>
               <span className="island-ws">{activeName}</span>
-              {nodes.filter((n) => n.type === "agent").length > 0 && (
-                <span className="island-count">{nodes.filter((n) => n.type === "agent" && !(n.data as AgentNodeData).exited).length}</span>
-              )}
+              {nodes.filter((n) => n.type === "agent").length > 0 && (() => {
+                const vivos = nodes.filter((n) => n.type === "agent" && !(n.data as AgentNodeData).exited).length;
+                return <span className="island-count" title={`${vivos} ${vivos === 1 ? "agente vivo" : "agentes vivos"}`}>{vivos}</span>;
+              })()}
             </span>
           }
         >
-          <span className="island-id" title={cwd}>
+          <span className="island-id">
             <span className="island-brand">or<span className="brand-q">q</span></span>
-            <span className="island-ws">{activeName}</span>
           </span>
+          <button
+            className="ib-ws"
+            title={cwd ? `${cwd} — trocar workspace` : "Abrir uma pasta de projeto"}
+            onClick={(e) => {
+              const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+              wsMenu(r.left, r.bottom + 8);
+            }}
+          >
+            <span className="island-ws">{activeName}</span>
+            {icons.caret}
+          </button>
           <span className="island-sep" />
           <button
             className={`ib${activeFloor ? " ib-accent" : ""}`}
@@ -921,29 +983,27 @@ export default function App() {
               }
               items.push({ label: "Novo floor…", icon: icons.layers, onClick: addFloor });
               if (activeFloor) items.push({ label: `Remover "${activeFloor}"`, danger: true, icon: icons.trash, onClick: () => dropFloor(activeFloor) });
-              setMenu({ x: r.left, y: r.bottom + 8, items });
+              setMenu({ x: r.left, y: r.bottom + 8, items, daIsland: true });
             }}
           >
             {icons.layers}
           </button>
           <span className="island-sep" />
           <button className="ib" onClick={() => addAgent({ kind: "shell", program: null }, "shell")} title="Terminal shell">{icons.shell}</button>
-          <button className="ib ib-accent" onClick={() => addAgent({ kind: "claude", extra_args: [] }, "claude")} title="Agente claude">{icons.claude}</button>
           <button
-            className="ib"
-            title="Outros agentes (codex, opencode, antigravity)"
+            className="ib ib-accent"
+            title={`Agentes (${CLIS.map((c) => c.label).join(", ")})`}
             onClick={(e) => {
               const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-              setMenu({ x: r.left, y: r.bottom + 8, items: CLIS.map((c) => ({
-                label: `Agente ${c.label}`, icon: icons.robo,
-                onClick: () => addAgent({ kind: "agent", program: c.program, extra_args: [] }, c.label),
+              setMenu({ x: r.left, y: r.bottom + 8, daIsland: true, items: CLIS.map((c) => ({
+                label: `Agente ${c.label}`, icon: c.icon, onClick: () => addAgent(c.mk(), c.label),
               })) });
             }}
           >
             {icons.robo}
           </button>
           <button className="ib" onClick={() => addNote()} title="Bloco de contexto">{icons.note}</button>
-          <button className="ib" onClick={() => addShape("box")} title="Forma (diagrama)">{icons.shape}</button>
+          <button className="ib" onClick={() => addMermaid()} title="Diagrama (mermaid)">{icons.diagrama}</button>
           <button className="ib" onClick={() => addPortal()} title="Portal (navegador)">{icons.portal}</button>
           <span className="island-sep" />
           <button
@@ -956,6 +1016,9 @@ export default function App() {
           <button className="ib" onClick={() => setBatuta(true)} title="Batuta — paleta de comandos (Ctrl+K)">{icons.batuta}</button>
           <button className="ib" onClick={() => { void openEditor(activeCwd).catch((e) => alertMsg("Erro ao abrir editor", String(e))); }} title="Abrir no editor">{icons.code}</button>
           <button className="ib" onClick={doSave} title="Salvar workspace (Ctrl+S)">{icons.save}</button>
+          <button className="ib" onClick={trocaTema} title={tema === "escuro" ? "Tema claro" : "Tema escuro"}>
+            {tema === "escuro" ? icons.sol : icons.lua}
+          </button>
         </Island>
         <div className="canvas" onWheel={onCanvasWheel}>
           <ReactFlow
@@ -977,10 +1040,15 @@ export default function App() {
             zoomOnScroll={false}
             panOnScroll={false}
             zoomOnPinch
+            /* trava = só navegar: pan e zoom seguem valendo, o que congela é
+               mexer no grafo (arrastar, ligar, selecionar) */
+            nodesDraggable={!travado}
+            nodesConnectable={!travado}
+            elementsSelectable={!travado}
           >
-            <Background gap={26} size={1.4} color="#232329" />
-            {/* sidebar flutua na esquerda → controles vão pra direita */}
-            <Controls position="bottom-right" />
+            <Background gap={26} size={1.4} color={tema === "claro" ? "#d9d9e0" : "#1b1b20"} />
+            {/* Island pinga do topo no centro → controles ficam no canto de baixo */}
+            <Controles travado={travado} onTravar={() => setTravado((t) => !t)} />
           </ReactFlow>
         </div>
       </main>
@@ -993,6 +1061,18 @@ export default function App() {
           onApply={(picked) => { if (ctxTarget) void seedContexts(ctxTarget, picked); }}
           onDefaults={(files) => { setDefaultContexts(files); dirty(); }}
           onClose={() => { setCtxTarget(undefined); refreshContexts(); }}
+        />
+      )}
+      {mmdTarget && (
+        <MermaidEditor
+          src={noteText.get(mmdTarget) ?? ""}
+          onClose={() => setMmdTarget(null)}
+          onSave={(src) => {
+            noteText.set(mmdTarget, src);
+            window.dispatchEvent(new CustomEvent("diagram-saved", { detail: { id: mmdTarget } }));
+            setMmdTarget(null);
+            dirty();
+          }}
         />
       )}
       {batuta && <Batuta items={batutaItems()} onClose={() => setBatuta(false)} />}

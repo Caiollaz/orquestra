@@ -13,13 +13,18 @@ export const islandNotify = (a: IslandActivity) =>
 
 const ACTIVITY_MS = 2200;
 
-export function Island({ pill, children }: { pill: ReactNode; children: ReactNode }) {
+// pinned = tem dropdown aberto ancorado num botão daqui. Enquanto estiver, a
+// barra não recolhe e nem cede o palco pra uma atividade: o menu vive FORA da
+// island (posição fixa na viewport), então o mouse indo até ele dispara o
+// onMouseLeave — e a barra sumia embaixo do próprio dropdown que abriu.
+export function Island({ pill, children, pinned = false }: { pill: ReactNode; children: ReactNode; pinned?: boolean }) {
   const [open, setOpen] = useState(false);
   const [activity, setActivity] = useState<IslandActivity | null>(null);
   const shellRef = useRef<HTMLDivElement>(null);
   const queue = useRef<IslandActivity[]>([]);
   const showing = useRef(false);
   const leaveTimer = useRef<number | undefined>(undefined);
+  const hover = useRef(false);
 
   // fila de atividades: cada uma segura o palco por ACTIVITY_MS
   useEffect(() => {
@@ -44,7 +49,8 @@ export function Island({ pill, children }: { pill: ReactNode; children: ReactNod
     return () => window.removeEventListener("island-activity", onAct);
   }, []);
 
-  const state: "activity" | "open" | "pill" = activity ? "activity" : open ? "open" : "pill";
+  const state: "activity" | "open" | "pill" =
+    pinned ? "open" : activity ? "activity" : open ? "open" : "pill";
 
   // FLIP de largura: o conteúdo novo já está no DOM (width:auto); anima da
   // largura anterior pra atual com overshoot de mola
@@ -64,13 +70,25 @@ export function Island({ pill, children }: { pill: ReactNode; children: ReactNod
   }, [state, children, pill, activity]);
 
   const enter = () => {
+    hover.current = true;
     clearTimeout(leaveTimer.current);
     setOpen(true);
   };
   const leave = () => {
+    hover.current = false;
+    if (pinned) return; // o dropdown segura a barra aberta
     clearTimeout(leaveTimer.current);
     leaveTimer.current = window.setTimeout(() => setOpen(false), 550);
   };
+
+  // dropdown fechou: se o mouse não voltou pra barra, recolhe com o mesmo
+  // atraso de sempre (o onMouseEnter não redispara se o cursor já está dentro)
+  useEffect(() => {
+    if (pinned || hover.current) return;
+    clearTimeout(leaveTimer.current);
+    leaveTimer.current = window.setTimeout(() => setOpen(false), 550);
+    return () => clearTimeout(leaveTimer.current);
+  }, [pinned]);
 
   return (
     <div

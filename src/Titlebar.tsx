@@ -1,8 +1,8 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 // Barra de janela própria (tauri.conf: decorations: false). O topo é cromo,
-// não palco: mesma superfície da sidebar, marca pequena à esquerda (a lockup
-// grande é da Island, que flutua sobre o canvas) e os três botões à direita.
+// não palco: sinal + marca pequenos à esquerda (a lockup grande é da Island,
+// que flutua sobre o canvas) e os três botões de janela à direita.
 // Arrastar e duplo-clique-pra-maximizar vêm do data-tauri-drag-region.
 
 const win = getCurrentWindow();
@@ -16,7 +16,16 @@ const Ico = {
 export function Titlebar() {
   return (
     <div className="titlebar" data-tauri-drag-region>
-      <span className="tb-brand">or<span className="brand-q">q</span>uestra</span>
+      <span className="tb-brand">
+        {/* sinal "oq": os dois anéis se cruzam — as duas primeiras letras e,
+            de novo, dois nós ligados. Mesmo desenho da landing page. */}
+        <svg viewBox="0 0 32 26" fill="none" aria-hidden>
+          <circle cx="8.9" cy="11" r="7.4" stroke="currentColor" strokeWidth="2.3" />
+          <circle cx="22.5" cy="11" r="7.4" stroke="currentColor" strokeWidth="2.3" />
+          <path d="M29.9 11v12.8" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" />
+        </svg>
+        <span>or<span className="brand-q">q</span>uestra</span>
+      </span>
       <span className="tb-gap" />
       <button className="ib" title="Minimizar" onClick={() => void win.minimize()}>{Ico.min}</button>
       <button className="ib" title="Maximizar" onClick={() => void win.toggleMaximize()}>{Ico.max}</button>

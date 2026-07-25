@@ -4,7 +4,10 @@ export type MenuItem =
   | { sep: true }
   | { sep?: false; label: string; onClick: () => void; danger?: boolean; icon?: ReactNode };
 
-export type MenuState = { x: number; y: number; items: MenuItem[] };
+// daIsland: o menu foi aberto por um botão da Island. Ela usa isso pra não
+// recolher enquanto ele estiver aberto — o mouse vai pro menu, que está FORA
+// dela, e sem essa marca o onMouseLeave fecharia a barra debaixo do dropdown.
+export type MenuState = { x: number; y: number; items: MenuItem[]; daIsland?: boolean };
 
 // Menu de contexto (click direito). Fecha ao clicar fora, Esc, scroll ou blur.
 // Reposiciona pra não vazar da janela.

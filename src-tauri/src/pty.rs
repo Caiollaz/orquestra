@@ -111,6 +111,88 @@ fn login_shell_path() -> Option<&'static str> {
         .as_deref()
 }
 
+/// PATH persistido do usuário/máquina, lido do registro — o equivalente Windows
+/// do `login_shell_path()`. Processo GUI herda o PATH de quando a sessão subiu:
+/// CLI instalado depois (o instalador do agy mexe no registro, não no processo
+/// vivo) fica invisível até o próximo logout. Ler o registro mata essa classe
+/// inteira, não só o agy. `reg query` em vez de crate: mesma escolha do git.
+#[cfg(windows)]
+fn registry_path() -> Option<&'static str> {
+    use std::os::windows::process::CommandExt;
+    use std::sync::OnceLock;
+    static CACHE: OnceLock<Option<String>> = OnceLock::new();
+    CACHE
+        .get_or_init(|| {
+            let mut acc: Vec<String> = Vec::new();
+            for key in [
+                r"HKCU\Environment",
+                r"HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment",
+            ] {
+                let out = std::process::Command::new("reg")
+                    .args(["query", key, "/v", "Path"])
+                    .creation_flags(0x0800_0000) // CREATE_NO_WINDOW: sem console piscando no boot
+                    .output();
+                let Ok(out) = out else { continue };
+                if let Some(v) = parse_reg_path(&String::from_utf8_lossy(&out.stdout)) {
+                    acc.push(expand_env_vars(&v));
+                }
+            }
+            (!acc.is_empty()).then(|| acc.join(";"))
+        })
+        .as_deref()
+}
+
+/// Extrai o valor de `Path` da saída do `reg query`, que vem como
+/// `    Path    REG_EXPAND_SZ    C:\foo;C:\bar` (o valor contém espaços, então
+/// não dá pra fatiar por token — pega o resto da linha depois do tipo).
+/// Sem `cfg(windows)` de propósito: assim o parser é testável no CI/dev Linux,
+/// que é onde este projeto é desenvolvido.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn parse_reg_path(out: &str) -> Option<String> {
+    for line in out.lines() {
+        let mut it = line.split_whitespace();
+        if !it.next().is_some_and(|k| k.eq_ignore_ascii_case("Path")) {
+            continue;
+        }
+        let Some(ty) = it.next().filter(|t| t.starts_with("REG_")) else { continue };
+        let val = line.split_once(ty)?.1.trim();
+        if !val.is_empty() {
+            return Some(val.to_string());
+        }
+    }
+    None
+}
+
+/// Expande `%VAR%` — `REG_EXPAND_SZ` guarda sem expandir (`%USERPROFILE%\...`).
+/// Variável inexistente fica literal: melhor um dir que não resolve do que
+/// comer o resto do PATH.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn expand_env_vars(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s;
+    while let Some(i) = rest.find('%') {
+        out.push_str(&rest[..i]);
+        let after = &rest[i + 1..];
+        let Some(j) = after.find('%') else {
+            out.push('%');
+            rest = after;
+            break;
+        };
+        let name = &after[..j];
+        match std::env::var(name) {
+            Ok(v) => out.push_str(&v),
+            Err(_) => {
+                out.push('%');
+                out.push_str(name);
+                out.push('%');
+            }
+        }
+        rest = &after[j + 1..];
+    }
+    out.push_str(rest);
+    out
+}
+
 /// Aquece o cache do PATH em background no boot (o 1º spawn não paga os 2.5s).
 pub fn prewarm_path() {
     let _ = augmented_path();
@@ -172,6 +254,10 @@ pub(crate) fn augmented_path() -> String {
     }
     #[cfg(windows)]
     {
+        // PATH persistido no registro: pega o que foi instalado depois do logon
+        if let Some(rp) = registry_path() {
+            parts.extend(std::env::split_paths(rp));
+        }
         // claude no Windows: instalador nativo (~\.local\bin\claude.exe) ou npm global (%APPDATA%\npm\claude.cmd)
         if let Some(up) = std::env::var_os("USERPROFILE") {
             let up = std::path::PathBuf::from(up);
@@ -182,7 +268,10 @@ pub(crate) fn augmented_path() -> String {
             parts.push(std::path::PathBuf::from(appdata).join("npm"));
         }
         if let Some(local) = std::env::var_os("LOCALAPPDATA") {
-            parts.push(std::path::PathBuf::from(local).join("Microsoft\\WindowsApps"));
+            let local = std::path::PathBuf::from(local);
+            parts.push(local.join("Microsoft\\WindowsApps"));
+            // agy (Antigravity): o instalador joga em %LOCALAPPDATA%\agy\bin
+            parts.push(local.join("agy\\bin"));
         }
     }
 
@@ -485,5 +574,30 @@ mod tests {
         assert!(path.contains(".nvm/versions/node"), "PATH sem nvm: {path}");
         let node = resolve_program("node", &path);
         assert!(std::path::Path::new(&node).is_file(), "node não resolveu: {node}");
+    }
+
+    /// Saída real do `reg query`: o valor tem espaço (Program Files) e vem
+    /// depois do tipo. Parse por token cortaria o caminho no meio.
+    #[test]
+    fn reg_path_parse() {
+        let out = "\r\nHKEY_CURRENT_USER\\Environment\r\n    Path    REG_EXPAND_SZ    %LOCALAPPDATA%\\agy\\bin;C:\\Program Files\\Git\\cmd\r\n";
+        assert_eq!(
+            parse_reg_path(out).unwrap(),
+            "%LOCALAPPDATA%\\agy\\bin;C:\\Program Files\\Git\\cmd"
+        );
+        // outras chaves na mesma saída não podem ser confundidas com o Path
+        assert!(parse_reg_path("    TEMP    REG_SZ    C:\\Temp\r\n").is_none());
+        assert!(parse_reg_path("ERROR: acesso negado").is_none());
+    }
+
+    #[test]
+    fn expande_var_do_registro() {
+        std::env::set_var("ORQ_TESTE_VAR", "C:\\alvo");
+        assert_eq!(expand_env_vars("%ORQ_TESTE_VAR%\\agy\\bin"), "C:\\alvo\\agy\\bin");
+        // variável que não existe fica literal — some com o dir, não com o PATH inteiro
+        assert_eq!(expand_env_vars("%NAO_EXISTE_XYZ%\\bin;C:\\ok"), "%NAO_EXISTE_XYZ%\\bin;C:\\ok");
+        // '%' solto não pode comer o resto da string
+        assert_eq!(expand_env_vars("C:\\50%\\bin"), "C:\\50%\\bin");
+        assert_eq!(expand_env_vars("C:\\sem-var"), "C:\\sem-var");
     }
 }
