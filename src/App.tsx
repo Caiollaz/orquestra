@@ -119,6 +119,29 @@ export default function App() {
     return () => window.removeEventListener("beforeunload", flush);
   }, []);
 
+  // touchpad/roda: vertical = zoom ancorado no cursor; horizontal = pan lateral.
+  // (React Flow só oferece "roda = zoom" OU "roda = pan" — aqui é os dois.)
+  const onCanvasWheel = useCallback((e: React.WheelEvent) => {
+    const inst = rfRef.current;
+    if (!inst) return;
+    // dentro de terminal/nota (.nowheel) a roda é scrollback/scroll do próprio nó
+    if ((e.target as HTMLElement).closest(".nowheel")) return;
+    const vp = inst.getViewport();
+    if (e.ctrlKey || Math.abs(e.deltaY) >= Math.abs(e.deltaX)) {
+      const zoom = Math.min(2, Math.max(0.2, vp.zoom * Math.pow(2, -e.deltaY * 0.0018)));
+      // ancora o ponto sob o cursor: p = (tela - t)/z ; t' = tela - p·z'
+      const rect = e.currentTarget.getBoundingClientRect();
+      const sx = e.clientX - rect.left;
+      const sy = e.clientY - rect.top;
+      const px = (sx - vp.x) / vp.zoom;
+      const py = (sy - vp.y) / vp.zoom;
+      void inst.setViewport({ x: sx - px * zoom, y: sy - py * zoom, zoom });
+    } else {
+      void inst.setViewport({ ...vp, x: vp.x - e.deltaX });
+    }
+    dirty();
+  }, [dirty]);
+
   const [floors, setFloors] = useState<Floor[]>([]);
   const [activeFloor, setActiveFloor] = useState("");
   const activeCwd = activeFloor ? (floors.find((f) => f.slug === activeFloor)?.path ?? cwd) : cwd;
@@ -907,7 +930,7 @@ export default function App() {
           <button className="ib" onClick={() => { void openEditor(activeCwd).catch((e) => alertMsg("Erro ao abrir editor", String(e))); }} title="Abrir no editor">{icons.code}</button>
           <button className="ib" onClick={doSave} title="Salvar workspace (Ctrl+S)">{icons.save}</button>
         </Island>
-        <div className="canvas">
+        <div className="canvas" onWheel={onCanvasWheel}>
           <ReactFlow
             nodes={nodes}
             edges={edges}
@@ -922,9 +945,15 @@ export default function App() {
             proOptions={{ hideAttribution: true }}
             minZoom={0.2}
             maxZoom={2}
+            /* roda/touchpad tratados no onWheel do .canvas: vertical = zoom
+               ancorado no cursor, horizontal = pan lateral. Pinch continua. */
+            zoomOnScroll={false}
+            panOnScroll={false}
+            zoomOnPinch
           >
             <Background gap={26} size={1.4} color="#302a25" />
-            <Controls />
+            {/* sidebar flutua na esquerda → controles vão pra direita */}
+            <Controls position="bottom-right" />
           </ReactFlow>
         </div>
       </main>

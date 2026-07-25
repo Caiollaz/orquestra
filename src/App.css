@@ -49,7 +49,7 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-.app { display: flex; flex-direction: row; flex: 1; min-height: 0; overflow: hidden; }
+.app { position: relative; display: flex; flex-direction: row; flex: 1; min-height: 0; overflow: hidden; }
 
 /* ---- barra de janela (decorations: false) ---------------------
    Cromo, não palco: mesmo --panel da sidebar, então barra e sidebar
@@ -86,21 +86,38 @@ select:focus-visible, [tabindex]:focus-visible {
   outline: 1px solid var(--accent); outline-offset: 1px;
 }
 
-/* ---- sidebar (estúdios / workspaces) ------------------------- */
+/* ---- sidebar (estúdios / workspaces) ---------------------------
+   Mesma linguagem da island: painel flutuante colado na borda esquerda,
+   raio só na direita (cima e baixo), blur, e largura com mola. */
 
 .sidebar {
+  position: absolute; left: 0; top: 14px; bottom: 14px; z-index: 9;
   display: flex; flex-direction: column;
-  width: 216px; flex: none;
-  background: var(--panel);
-  border-right: 1px solid var(--border);
-  padding: 10px 8px;
+  width: 236px;
+  background: color-mix(in srgb, var(--panel) 90%, transparent);
+  border: 1px solid var(--border);
+  border-left: none;
+  border-radius: 0 18px 18px 0;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(14px);
+  padding: 12px 10px;
   gap: 4px;
-  transition: width 0.16s ease;
+  overflow: hidden;
+  /* mola: mesmo easing do morph da island */
+  transition: width 0.38s cubic-bezier(0.34, 1.2, 0.44, 1);
+  animation: sidebar-in 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
-.sidebar.is-collapsed { width: 56px; padding: 10px 5px; }
+@keyframes sidebar-in {
+  from { opacity: 0; transform: translateX(-14px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+.sidebar.is-collapsed { width: 60px; padding: 12px 7px; }
 .sidebar.is-collapsed .sb-item,
-.sidebar.is-collapsed .sb-add { justify-content: center; padding: 6px 0; gap: 0; }
-.sidebar.is-collapsed .sb-head { justify-content: center; padding: 2px 0 8px; }
+.sidebar.is-collapsed .sb-add { justify-content: center; padding: 5px 0; gap: 0; }
+.sidebar.is-collapsed .sb-head { justify-content: center; padding: 2px 0 10px; }
+
+/* nome entra como o conteúdo da island: slide + blur */
+.sb-name { animation: island-swap 0.3s cubic-bezier(0.2, 0.8, 0.2, 1); }
 
 .sb-head {
   display: flex; align-items: center; justify-content: space-between;
@@ -112,35 +129,44 @@ select:focus-visible, [tabindex]:focus-visible {
   color: var(--muted); user-select: none;
 }
 .sb-toggle {
-  background: transparent; border: none; color: var(--muted);
-  cursor: pointer; font-size: 14px; line-height: 1; padding: 2px 6px; border-radius: 6px;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 36px; height: 36px; flex: none;
+  background: transparent; border: 1px solid transparent;
+  color: var(--muted); cursor: pointer; border-radius: 10px;
+  transition: background 0.15s, color 0.15s;
 }
-.sb-toggle:hover { color: var(--text); background: var(--panel-2); }
+.sb-toggle:hover { color: var(--text); background: var(--panel-2); border-color: var(--border); }
 
-.sb-list { display: flex; flex-direction: column; gap: 2px; flex: 1; overflow-y: auto; min-height: 0; }
+.sb-list {
+  display: flex; flex-direction: column; gap: 2px; flex: 1; min-height: 0;
+  overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin;
+}
 
 .sb-item, .sb-add {
-  display: flex; align-items: center; gap: 10px;
+  display: flex; align-items: center; gap: 9px;
   background: transparent; border: 1px solid transparent;
   color: var(--text); cursor: pointer;
-  border-radius: 10px; padding: 6px; text-align: left;
+  border-radius: 10px; padding: 5px 6px; text-align: left;
   font: 500 12px var(--mono); width: 100%;
-  transition: background 0.12s, border-color 0.12s;
+  transition: background 0.15s, border-color 0.15s;
 }
-.sb-item:hover, .sb-add:hover { background: var(--panel-2); }
-.sb-item.is-active { background: var(--panel-2); border-color: var(--accent-dim); }
-.sb-item.is-active .sb-badge { background: var(--accent); color: var(--bg); }
+/* ativo: azul da marca, sem borda */
+.sb-item.is-active { background: color-mix(in srgb, var(--marca) 14%, transparent); }
+.sb-item.is-active .sb-name { color: var(--marca); }
+.sb-item.is-active .sb-badge {
+  background: color-mix(in srgb, var(--marca) 20%, transparent);
+  border-color: transparent; color: var(--marca);
+}
 
 .sb-badge {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 30px; height: 30px; flex: none;
-  border-radius: 8px; background: var(--panel-2);
+  width: 32px; height: 32px; flex: none;
+  border-radius: 9px; background: var(--panel-2);
   border: 1px solid var(--border);
-  font: 600 13px var(--mono); color: var(--muted);
+  font: 600 16px var(--mono); color: var(--muted);
 }
 .sb-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sb-add { margin-top: 4px; color: var(--muted); }
-.sb-add:hover { color: var(--text); }
 .sb-add .sb-badge { background: transparent; border-style: dashed; font-size: 16px; }
 
 /* ---- palco (canvas) + Dynamic Island ------------------------- */
@@ -232,8 +258,8 @@ select:focus-visible, [tabindex]:focus-visible {
 .ib:focus-visible, .sb-item:focus-visible, .agent-btn:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
 
 /* escala a island (e a sidebar) em telas grandes */
-@media (min-width: 2200px) { .island { --s: 1.35; } .sidebar { width: 272px; } .sidebar.is-collapsed { width: 68px; } }
-@media (min-width: 3400px) { .island { --s: 1.9; } .sidebar { width: 340px; } .sidebar.is-collapsed { width: 84px; } }
+@media (min-width: 2200px) { .island { --s: 1.5; } .sidebar { width: 300px; } .sidebar.is-collapsed { width: 80px; } }
+@media (min-width: 3400px) { .island { --s: 2.1; } .sidebar { width: 372px; } .sidebar.is-collapsed { width: 98px; } }
 
 /* ---- menu de contexto ---------------------------------------- */
 
@@ -302,7 +328,8 @@ select:focus-visible, [tabindex]:focus-visible {
 }
 @media (prefers-reduced-motion: reduce) {
   .react-flow__edge.animated .react-flow__edge-path { animation: none; }
-  .island, .island-swap { animation: none; }
+  .island, .island-swap, .sidebar, .sb-name { animation: none; }
+  .sidebar, .sb-item, .sb-badge { transition: none; }
 }
 
 .react-flow__handle {
