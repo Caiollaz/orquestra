@@ -61,7 +61,7 @@ const isLLM = (cmd: AgentCmd) => cmd.kind === "claude" || cmd.kind === "agent";
 const CLIS = [
   { program: "codex", label: "codex", hint: "OpenAI Codex CLI" },
   { program: "opencode", label: "opencode", hint: "OpenCode" },
-  { program: "antigravity", label: "antigravity", hint: "Antigravity CLI" },
+  { program: "agy", label: "antigravity", hint: "Antigravity CLI" },
 ] as const;
 
 // ícones da @edusites/icons (herda cor via currentColor; tamanho vem do CSS).

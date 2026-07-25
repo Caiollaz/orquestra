@@ -211,13 +211,14 @@ fn newest_nvm_bin(home: &std::path::Path) -> Option<std::path::PathBuf> {
 
 /// Extensões executáveis a testar ao resolver um nome sem extensão.
 /// No Windows vem do PATHEXT (`claude` → `claude.exe`/`claude.cmd`); em Unix só o nome cru.
+/// PATHEXT vem PRIMEIRO: o npm cria três shims lado a lado (`claude` sh, `claude.cmd`,
+/// `claude.ps1`); o sem extensão é script bash e o CreateProcess quebra com
+/// "%1 não é aplicativo Win32 válido" (os error 193). Preferir `.cmd`/`.exe`.
 #[cfg(windows)]
 fn executable_exts() -> Vec<String> {
-    let mut v = vec![String::new()]; // nome já pode trazer a extensão
     let raw = std::env::var("PATHEXT").unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".into());
-    for e in raw.split(';').filter(|s| !s.is_empty()) {
-        v.push(e.to_string());
-    }
+    let mut v: Vec<String> = raw.split(';').filter(|s| !s.is_empty()).map(str::to_string).collect();
+    v.push(String::new()); // por último: nome já pode trazer a extensão (claude.exe)
     v
 }
 #[cfg(not(windows))]
