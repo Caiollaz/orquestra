@@ -951,7 +951,7 @@ export default function App() {
             panOnScroll={false}
             zoomOnPinch
           >
-            <Background gap={26} size={1.4} color="#302a25" />
+            <Background gap={26} size={1.4} color="#232329" />
             {/* sidebar flutua na esquerda → controles vão pra direita */}
             <Controls position="bottom-right" />
           </ReactFlow>

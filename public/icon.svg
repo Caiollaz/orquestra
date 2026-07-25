@@ -10,13 +10,13 @@
   <defs>
     <!-- luz do fosso: brilho quente atrás do maestro -->
     <radialGradient id="pit" cx="50%" cy="66%" r="72%">
-      <stop offset="0%" stop-color="#2e2318"/>
-      <stop offset="45%" stop-color="#1d1712"/>
-      <stop offset="100%" stop-color="#131110"/>
+      <stop offset="0%" stop-color="#1a1a20"/>
+      <stop offset="45%" stop-color="#111114"/>
+      <stop offset="100%" stop-color="#09090b"/>
     </radialGradient>
     <radialGradient id="glow" cx="50%" cy="50%" r="50%">
-      <stop offset="0%" stop-color="#c69a55" stop-opacity="0.55"/>
-      <stop offset="100%" stop-color="#c69a55" stop-opacity="0"/>
+      <stop offset="0%" stop-color="#58a6ff" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#58a6ff" stop-opacity="0"/>
     </radialGradient>
     <filter id="soft" x="-60%" y="-60%" width="220%" height="220%">
       <feGaussianBlur stdDeviation="10"/>
@@ -25,10 +25,10 @@
 
   <!-- fundo squircle -->
   <rect x="0" y="0" width="1024" height="1024" rx="232" fill="url(#pit)"/>
-  <rect x="10" y="10" width="1004" height="1004" rx="224" fill="none" stroke="#c69a55" stroke-opacity="0.14" stroke-width="4"/>
+  <rect x="10" y="10" width="1004" height="1004" rx="224" fill="none" stroke="#58a6ff" stroke-opacity="0.14" stroke-width="4"/>
 
   <!-- fileiras do fosso: arcos sutis atrás dos nós -->
-  <g fill="none" stroke="#c69a55" stroke-opacity="0.10" stroke-width="6">
+  <g fill="none" stroke="#58a6ff" stroke-opacity="0.10" stroke-width="6">
     <path d="M 200 560 A 380 380 0 0 1 824 560"/>
     <path d="M 262 626 A 300 300 0 0 1 762 626"/>
   </g>
@@ -37,7 +37,7 @@
   <ellipse cx="512" cy="712" rx="300" ry="180" fill="url(#glow)" opacity="0.5"/>
 
   <!-- cabos: maestro → naipes (tracejado igual às arestas do canvas) -->
-  <g fill="none" stroke="#c69a55" stroke-width="16" stroke-linecap="round"
+  <g fill="none" stroke="#58a6ff" stroke-width="16" stroke-linecap="round"
      stroke-dasharray="40 30" stroke-opacity="0.62">
     <path d="M 408 606 Q 290 556 232 452"/>
     <path d="M 472 570 Q 430 460 402 342"/>
@@ -47,18 +47,18 @@
 
   <!-- naipes: cordas, latão, madeiras, percussão -->
   <g>
-    <circle cx="216" cy="408" r="66" fill="#b3543f"/>
-    <circle cx="216" cy="408" r="66" fill="#b3543f" filter="url(#soft)" opacity="0.5"/>
-    <circle cx="394" cy="292" r="66" fill="#c69a55"/>
-    <circle cx="394" cy="292" r="66" fill="#c69a55" filter="url(#soft)" opacity="0.5"/>
-    <circle cx="630" cy="292" r="66" fill="#6f8f5e"/>
-    <circle cx="630" cy="292" r="66" fill="#6f8f5e" filter="url(#soft)" opacity="0.5"/>
-    <circle cx="808" cy="408" r="66" fill="#7d8fa8"/>
-    <circle cx="808" cy="408" r="66" fill="#7d8fa8" filter="url(#soft)" opacity="0.5"/>
+    <circle cx="216" cy="408" r="66" fill="#3fb950"/>
+    <circle cx="216" cy="408" r="66" fill="#3fb950" filter="url(#soft)" opacity="0.5"/>
+    <circle cx="394" cy="292" r="66" fill="#58a6ff"/>
+    <circle cx="394" cy="292" r="66" fill="#58a6ff" filter="url(#soft)" opacity="0.5"/>
+    <circle cx="630" cy="292" r="66" fill="#e3b341"/>
+    <circle cx="630" cy="292" r="66" fill="#e3b341" filter="url(#soft)" opacity="0.5"/>
+    <circle cx="808" cy="408" r="66" fill="#db6e8c"/>
+    <circle cx="808" cy="408" r="66" fill="#db6e8c" filter="url(#soft)" opacity="0.5"/>
   </g>
 
   <!-- maestro: anel de latão (a "estante" central que rege os naipes) -->
-  <circle cx="512" cy="712" r="112" fill="none" stroke="#c69a55" stroke-width="34"/>
-  <circle cx="512" cy="712" r="112" fill="none" stroke="#c69a55" stroke-width="34" filter="url(#soft)" opacity="0.55"/>
-  <circle cx="512" cy="712" r="34" fill="#e6ddd0"/>
+  <circle cx="512" cy="712" r="112" fill="none" stroke="#58a6ff" stroke-width="34"/>
+  <circle cx="512" cy="712" r="112" fill="none" stroke="#58a6ff" stroke-width="34" filter="url(#soft)" opacity="0.55"/>
+  <circle cx="512" cy="712" r="34" fill="#ededf0"/>
 </svg>
