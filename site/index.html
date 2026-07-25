@@ -7,26 +7,32 @@
   <meta name="description" content="App desktop com um canvas infinito de terminais interativos. Vários agentes claude tocando ao mesmo tempo: você dá contexto, liga um no outro e acompanha tudo." />
   <meta property="og:title" content="orquestra — você rege, eles escrevem" />
   <meta property="og:description" content="Um canvas. Quatro vozes. O mesmo eixo de tempo." />
-  <meta name="theme-color" content="#14121f" />
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2314121f'/%3E%3Cpath d='M4 11h24M4 21h24' stroke='%23332c4c' stroke-width='1.5'/%3E%3Crect x='7' y='8.5' width='9' height='5' rx='1.5' fill='%23a98cf5'/%3E%3Crect x='14' y='18.5' width='11' height='5' rx='1.5' fill='%23f2c230'/%3E%3C/svg%3E" />
+  <meta name="theme-color" content="#09090b" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2309090b'/%3E%3Cpath d='M4 11h24M4 21h24' stroke='%2326262b' stroke-width='1.5'/%3E%3Crect x='7' y='8.5' width='9' height='5' rx='1.5' fill='%2358a6ff'/%3E%3Crect x='14' y='18.5' width='11' height='5' rx='1.5' fill='%233fb950'/%3E%3C/svg%3E" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,400..700;1,6..96,400..600&family=Archivo:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,700;0,800;1,400&display=swap" rel="stylesheet" />
   <style>
+    /* mesmos tokens do app (src/App.css): base neutra, cor só no naipe do
+       agente e no cabo aceso. Uma família só, JetBrains Mono — o produto é
+       um terminal, a página fala a mesma língua. */
     :root {
-      --fosso: #14121f;      /* fundo: escuridão do fosso da orquestra */
-      --painel: #1e1a2e;
-      --pauta: #332c4c;      /* linha da pauta / bordas */
-      --papel: #e9e7f2;
-      --tinta-fraca: #9a94b0;
-      --enxofre: #f2c230;    /* claude · dev + ação */
-      --lilas: #a98cf5;      /* claude · po */
-      --teal: #52c7b8;       /* shell */
-      --rosa: #ec6a93;       /* nota */
+      --fosso: #09090b;      /* --bg */
+      --painel: #101013;     /* --panel */
+      --pauta: #26262b;      /* --border */
+      --papel: #ededf0;      /* --text */
+      --tinta-fraca: #85858f;/* --muted */
+      --aceso: #ffffff;      /* --wire-active: cabo com dado passando */
+      --azul: #58a6ff;       /* SECTIONS[0] */
+      --verde: #3fb950;      /* SECTIONS[1] */
+      --ambar: #e3b341;      /* SECTIONS[2] */
+      --rosa: #db6e8c;       /* SECTIONS[3] */
+      --score: #d2d2d8;      /* --score: papel do nó de nota */
+      --portal: #8492a6;     /* --portal */
 
-      --display: "Bodoni Moda", Georgia, serif;
-      --corpo: "Archivo", system-ui, sans-serif;
       --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+      --display: var(--mono);
+      --corpo: var(--mono);
 
       --compasso: 14s;       /* duração de uma passada da cabeça de leitura */
     }
@@ -37,12 +43,12 @@
     body {
       background: var(--fosso);
       color: var(--papel);
-      font: 400 16px/1.6 var(--corpo);
+      font: 400 14.5px/1.7 var(--corpo);
       -webkit-font-smoothing: antialiased;
       text-rendering: optimizeLegibility;
     }
     a { color: inherit; }
-    :focus-visible { outline: 2px solid var(--enxofre); outline-offset: 3px; border-radius: 2px; }
+    :focus-visible { outline: 2px solid var(--azul); outline-offset: 3px; border-radius: 2px; }
     ul { list-style: none; }
 
     .wrap { max-width: 1080px; margin: 0 auto; padding: 0 28px; }
@@ -60,10 +66,10 @@
       gap: 20px; padding: 26px 0 0;
     }
     .marca {
-      font: 400 22px/1 var(--display);
-      letter-spacing: 0.01em; text-decoration: none;
+      font: 700 15px/1 var(--display);
+      letter-spacing: -0.02em; text-decoration: none;
     }
-    .marca em { font-style: italic; color: var(--enxofre); }
+    .marca em { font-style: normal; color: var(--azul); }
     .marca span { font: 500 11px/1 var(--mono); color: var(--tinta-fraca); margin-left: 10px; letter-spacing: 0.08em; }
     .nav-links { display: flex; gap: 24px; font: 500 12.5px/1 var(--mono); }
     .nav-links a { color: var(--tinta-fraca); text-decoration: none; }
@@ -72,31 +78,31 @@
     /* ---- herói ------------------------------------------------ */
     .heroi { padding: 84px 0 0; }
     h1 {
-      font: 400 clamp(46px, 10.5vw, 104px)/0.94 var(--display);
-      letter-spacing: -0.015em;
-      max-width: 15ch;
+      font: 800 clamp(34px, 7.4vw, 76px)/1.02 var(--display);
+      letter-spacing: -0.055em; word-spacing: -0.22em;
+      max-width: 17ch;
     }
     h1 em {
-      font-style: italic; font-weight: 500;
-      color: var(--enxofre);
+      font-style: normal; font-weight: 800;
+      color: var(--azul);
     }
     .sub {
       margin-top: 28px; max-width: 54ch;
-      font-size: 17px; color: var(--tinta-fraca);
+      font-size: 15px; color: var(--tinta-fraca);
     }
     .sub strong { color: var(--papel); font-weight: 500; }
-    .sub code { font: 400 15px/1 var(--mono); color: var(--enxofre); }
+    .sub code { color: var(--aceso); }
 
     .acoes { display: flex; align-items: center; gap: 16px; margin-top: 36px; flex-wrap: wrap; }
     .btn {
       display: inline-block; padding: 13px 24px;
-      font: 500 14px/1 var(--corpo); letter-spacing: 0.01em;
+      font: 500 13px/1 var(--corpo);
       text-decoration: none; border-radius: 3px;
       border: 1px solid transparent;
       transition: background-color 120ms ease, border-color 120ms ease;
     }
-    .btn-tutti { background: var(--enxofre); color: #1a1503; font-weight: 600; }
-    .btn-tutti:hover { background: #ffd551; }
+    .btn-tutti { background: var(--papel); color: var(--fosso); font-weight: 700; letter-spacing: -0.01em; }
+    .btn-tutti:hover { background: #ffffff; }
     .btn-solo { border-color: var(--pauta); color: var(--papel); }
     .btn-solo:hover { border-color: var(--tinta-fraca); background: var(--painel); }
     .formatos { margin-top: 16px; font: 400 12px/1.7 var(--mono); color: var(--tinta-fraca); }
@@ -109,31 +115,31 @@
     .voz { font: 500 11px/1 var(--mono); letter-spacing: 0.04em; }
     .linha-pauta { stroke: var(--pauta); stroke-width: 1; vector-effect: non-scaling-stroke; }
     .barra { fill: var(--cor); }
-    .cabo { fill: none; stroke: var(--cor); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
-    .cabeca { fill: var(--cor); }
-    .msg { font: 400 10px/1 var(--mono); fill: var(--cor); letter-spacing: 0.01em; }
+    /* cabo e mensagem usam a cor do cabo aceso do app — é o dado passando */
+    .cabo { fill: none; stroke: var(--aceso); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+    .cabeca { fill: var(--aceso); }
+    .msg { font: 400 10px/1 var(--mono); fill: var(--aceso); letter-spacing: 0.01em; }
 
-    /* o que ainda não tocou fica sob um véu da cor do fundo; a cabeça de leitura
-       e o véu compartilham a mesma animação, então andam colados */
-    .veu, .cabeca-leitura { animation: reger var(--compasso) linear infinite; }
-    .veu { fill: var(--fosso); opacity: 0.6; }
-    .cabeca-leitura { stroke: var(--enxofre); stroke-width: 1; opacity: 0.75; vector-effect: non-scaling-stroke; }
+    /* a varredura é um rastro de luz atrás da cabeça de leitura — nada de véu
+       escurecendo as barras: naipe escurecido perde a cor (âmbar vira marrom) */
+    .rastro, .cabeca-leitura { animation: reger var(--compasso) linear infinite; }
+    .cabeca-leitura { stroke: var(--aceso); stroke-width: 1; opacity: 0.75; vector-effect: non-scaling-stroke; }
     @keyframes reger { from { transform: translateX(112px); } to { transform: translateX(1000px); } }
 
     .tira-pe {
       display: flex; justify-content: space-between; gap: 24px; flex-wrap: wrap;
       margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--pauta);
     }
-    .tira-pe p { font-size: 13.5px; color: var(--tinta-fraca); max-width: 62ch; }
+    .tira-pe p { font-size: 13px; color: var(--tinta-fraca); max-width: 62ch; }
 
     /* ---- seções ----------------------------------------------- */
     section { padding: 104px 0 0; }
     h2 {
       margin-top: 16px;
-      font: 400 clamp(28px, 4.4vw, 44px)/1.1 var(--display);
-      letter-spacing: -0.01em; max-width: 22ch;
+      font: 700 clamp(22px, 3.1vw, 33px)/1.2 var(--display);
+      letter-spacing: -0.04em; max-width: 26ch;
     }
-    h2 em { font-style: italic; color: var(--enxofre); }
+    h2 em { font-style: normal; color: var(--azul); }
 
     /* instrumentação: a sintaxe real do produto na margem esquerda */
     .instr { margin-top: 48px; border-top: 1px solid var(--pauta); }
@@ -150,8 +156,8 @@
       padding-top: 3px;
       overflow-wrap: anywhere;
     }
-    .instr h3 { font: 500 16px/1.3 var(--corpo); margin-bottom: 5px; }
-    .instr p { font-size: 14.5px; color: var(--tinta-fraca); max-width: 58ch; }
+    .instr h3 { font: 500 15px/1.35 var(--corpo); letter-spacing: -0.01em; margin-bottom: 5px; }
+    .instr p { font-size: 13.5px; color: var(--tinta-fraca); max-width: 62ch; }
     .instr p code { font: 400 13px/1 var(--mono); color: var(--papel); }
 
     /* partitura: marcas de ensaio — a única sequência real da página */
@@ -160,11 +166,11 @@
     .marca-ensaio {
       display: grid; place-items: center;
       width: 30px; height: 30px;
-      border: 1px solid var(--enxofre); color: var(--enxofre);
+      border: 1px solid var(--pauta); color: var(--papel);
       font: 500 13px/1 var(--mono);
     }
-    .ensaio h3 { font: 500 16px/1.3 var(--corpo); margin-bottom: 6px; }
-    .ensaio p { font-size: 14.5px; color: var(--tinta-fraca); }
+    .ensaio h3 { font: 500 15px/1.35 var(--corpo); letter-spacing: -0.01em; margin-bottom: 6px; }
+    .ensaio p { font-size: 13.5px; color: var(--tinta-fraca); }
     .ensaio kbd {
       font: 500 12px/1 var(--mono);
       background: var(--painel); border: 1px solid var(--pauta);
@@ -187,7 +193,7 @@
       display: flex; justify-content: space-between; gap: 20px; flex-wrap: wrap;
       font: 400 12.5px/1.6 var(--mono); color: var(--tinta-fraca);
     }
-    footer em { font-family: var(--display); font-size: 14px; color: var(--enxofre); }
+    footer em { font-style: normal; font-weight: 700; color: var(--papel); }
 
     @media (max-width: 760px) {
       .heroi { padding-top: 56px; }
@@ -207,7 +213,7 @@
 
     @media (prefers-reduced-motion: reduce) {
       html { scroll-behavior: auto; }
-      .veu, .cabeca-leitura { display: none; }         /* partitura inteira acesa */
+      .rastro, .cabeca-leitura { display: none; }      /* partitura estática */
       * { transition: none !important; }
     }
   </style>
@@ -215,7 +221,7 @@
 <body>
   <div class="wrap">
     <nav>
-      <a class="marca" href="#">or<em>q</em>uestra<span>v0.6.0</span></a>
+      <a class="marca" href="#">or<em>q</em>uestra<span>v0.6.2</span></a>
       <div class="nav-links">
         <a href="#instrumentacao">instrumentação</a>
         <a href="#partitura">como funciona</a>
@@ -242,12 +248,22 @@
         <div class="tira-rolo">
           <svg viewBox="0 0 1000 240" role="img"
                aria-label="Partitura de uma sessão: claude · po delega para claude · dev, que manda pnpm test para shell-1, recebe a saída de volta e registra o resultado numa nota.">
+            <defs>
+              <linearGradient id="brilho" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0" stop-color="#ffffff" stop-opacity="0" />
+                <stop offset="1" stop-color="#ffffff" stop-opacity="0.09" />
+              </linearGradient>
+              <clipPath id="trilha" clipPathUnits="userSpaceOnUse">
+                <rect x="112" y="0" width="888" height="240" />
+              </clipPath>
+            </defs>
+
             <!-- nomes das vozes na margem, como numa primeira página de partitura -->
             <g text-anchor="end">
-              <text class="voz" x="100" y="31"  fill="#a98cf5">claude · po</text>
-              <text class="voz" x="100" y="91"  fill="#f2c230">claude · dev</text>
-              <text class="voz" x="100" y="151" fill="#52c7b8">shell-1</text>
-              <text class="voz" x="100" y="211" fill="#ec6a93">nota</text>
+              <text class="voz" x="100" y="31"  fill="#58a6ff">claude · po</text>
+              <text class="voz" x="100" y="91"  fill="#3fb950">claude · dev</text>
+              <text class="voz" x="100" y="151" fill="#e3b341">shell-1</text>
+              <text class="voz" x="100" y="211" fill="#d2d2d8">nota</text>
             </g>
 
             <g>
@@ -259,7 +275,7 @@
                 <line class="linha-pauta" x1="112" y1="208" x2="1000" y2="208" />
 
                 <!-- claude · po -->
-                <g style="--cor: var(--lilas)">
+                <g style="--cor: var(--azul)">
                   <rect class="barra" x="140" y="22" width="110" height="12" rx="2" />
                   <path class="cabo" d="M 250 28 C 271 28, 271 88, 292 88" />
                   <circle class="cabeca" cx="292" cy="88" r="3.5" />
@@ -268,7 +284,7 @@
                 </g>
 
                 <!-- claude · dev -->
-                <g style="--cor: var(--enxofre)">
+                <g style="--cor: var(--verde)">
                   <rect class="barra" x="292" y="82" width="138" height="12" rx="2" />
                   <path class="cabo" d="M 430 88 C 451 88, 451 148, 472 148" />
                   <circle class="cabeca" cx="472" cy="148" r="3.5" />
@@ -280,7 +296,7 @@
                 </g>
 
                 <!-- shell-1 -->
-                <g style="--cor: var(--teal)">
+                <g style="--cor: var(--ambar)">
                   <rect class="barra" x="472" y="142" width="103" height="12" rx="2" />
                   <path class="cabo" d="M 575 148 C 596 148, 596 88, 617 88" />
                   <circle class="cabeca" cx="617" cy="88" r="3.5" />
@@ -288,13 +304,13 @@
                 </g>
 
                 <!-- nota -->
-                <g style="--cor: var(--rosa)">
+                <g style="--cor: var(--score)">
                   <rect class="barra" x="842" y="202" width="138" height="12" rx="2" />
                 </g>
               </g>
             </g>
 
-            <rect class="veu" x="0" y="0" width="888" height="240" />
+            <g clip-path="url(#trilha)"><rect class="rastro" x="-150" y="0" width="150" height="240" fill="url(#brilho)" /></g>
             <line class="cabeca-leitura" x1="0" y1="8" x2="0" y2="232" />
           </svg>
         </div>
@@ -309,56 +325,56 @@
       <p class="rotulo">— instrumentação</p>
       <h2>Cada naipe entra com <em>uma</em> função.</h2>
       <ul class="instr">
-        <li style="--cor: var(--enxofre)">
+        <li style="--cor: var(--azul)">
           <p class="sintaxe">⇢nome: mensagem</p>
           <div>
             <h3>Agentes que conversam</h3>
             <p>Ligue dois nós e a saída de um cai no stdin do outro. O claude delega comando pro shell, fala com outro claude, escreve numa nota. O cabo acende quando passa dado.</p>
           </div>
         </li>
-        <li style="--cor: var(--lilas)">
+        <li style="--cor: var(--azul)">
           <p class="sintaxe">.orquestra/contexts/*.md</p>
           <div>
             <h3>Contextos empilháveis</h3>
             <p>Regra de negócio, arquitetura, contrato — markdown, vários por agente. Os padrões do workspace entram sozinhos em todo agente claude novo.</p>
           </div>
         </li>
-        <li style="--cor: var(--lilas)">
+        <li style="--cor: var(--azul)">
           <p class="sintaxe">.orquestra/roles/*.md</p>
           <div>
             <h3>Papéis</h3>
             <p>Quem o agente é: um preset em markdown com <code>{{var}}</code>, aplicado num clique e com selo no cabeçalho do nó.</p>
           </div>
         </li>
-        <li style="--cor: var(--teal)">
+        <li style="--cor: var(--ambar)">
           <p class="sintaxe">git worktree</p>
           <div>
             <h3>Floors</h3>
             <p>Um worktree por feature: os agentes trabalham em branches isoladas sem tocar na raiz. Apagar um floor com trabalho pendente exige confirmação explícita.</p>
           </div>
         </li>
-        <li style="--cor: var(--enxofre)">
+        <li style="--cor: var(--azul)">
           <p class="sintaxe">Ctrl+K</p>
           <div>
             <h3>Batuta</h3>
             <p>Paleta de comandos: cria nó, troca de workspace, aplica papel e contexto sem soltar o teclado.</p>
           </div>
         </li>
-        <li style="--cor: var(--teal)">
+        <li style="--cor: var(--portal)">
           <p class="sintaxe">⇢portal-1: url</p>
           <div>
             <h3>Portais</h3>
             <p>Um navegador dentro do canvas, dirigido pelo claude conectado. Site que bloqueia embed abre em janela nativa.</p>
           </div>
         </li>
-        <li style="--cor: var(--rosa)">
+        <li style="--cor: var(--verde)">
           <p class="sintaxe">a cada N segundos</p>
           <div>
             <h3>Prompts agendados</h3>
             <p>Repita um prompt num agente sem estar por perto: teste em loop, status de deploy, vigília de log.</p>
           </div>
         </li>
-        <li style="--cor: var(--rosa)">
+        <li style="--cor: var(--score)">
           <p class="sintaxe">~/.orquestra/</p>
           <div>
             <h3>Workspaces</h3>

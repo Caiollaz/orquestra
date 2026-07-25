@@ -27,6 +27,10 @@ export const killAgent = (agentId: string) =>
 export const forwardOutput = (toAgent: string, text: string) =>
   invoke<void>("forward_output", { toAgent, text });
 
+// binários que o app roda, resolvidos no PATH aumentado (tela de boas-vindas)
+export type Prereqs = { claude: boolean; node: boolean; git: boolean };
+export const checkPrereqs = () => invoke<Prereqs>("check_prereqs");
+
 // ── papéis (roles.rs) ───────────────────────────────────────────────
 export type Role = { file: string; name: string; agent: string; description: string; body: string };
 export const listRoles = (repoPath: string) => invoke<Role[]>("list_roles", { repoPath });

@@ -1,7 +1,7 @@
 {
   "name": "orquestra",
   "private": true,
-  "version": "0.6.1",
+  "version": "0.6.2",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,11 +10,10 @@
     "tauri": "tauri"
   },
   "dependencies": {
-    "@fontsource-variable/eb-garamond": "^5.3.0",
+    "@edusites/icons": "^1.5.2",
     "@fontsource/jetbrains-mono": "^5.3.0",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-dialog": "^2.7.2",
-    "@xterm/addon-canvas": "^0.7.0",
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/xterm": "^5.5.0",
     "@xyflow/react": "^12.11.2",

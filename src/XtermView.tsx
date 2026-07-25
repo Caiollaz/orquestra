@@ -1,7 +1,6 @@
 import { useEffect, useRef } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
-import { CanvasAddon } from "@xterm/addon-canvas";
 import "@xterm/xterm/css/xterm.css";
 import { spawnAgent, writeStdin, resizePty, killAgent, type AgentCmd } from "./lib/tauri";
 import { terminals } from "./shared";
@@ -25,36 +24,38 @@ export function XtermView({ agentId, cmd, cwd, onIdle, onSpawn }: {
       fontFamily: '"JetBrains Mono", ui-monospace, monospace',
       fontSize: 12,
       cursorBlink: true,
-      // canvas addon (não webgl): não estoura contextos com N terminais no canvas
+      // renderer DOM (sem canvas/webgl): texto real escala NÍTIDO no zoom do
+      // React Flow — o canvas addon virava bitmap borrado ao ampliar.
+      // ponytail: se N terminais com TUI pesado jankarem, upgrade = webgl addon
+      // só no terminal focado (canvas addon foi removido por causa do borrão).
       allowProposedApi: true,
       // paleta quente do app (fosso de orquestra) — casa com App.css
       theme: {
-        background: "#14110f",
-        foreground: "#e6ddd0",
-        cursor: "#c69a55",
-        cursorAccent: "#14110f",
-        selectionBackground: "#c69a5540",
-        black: "#1c1917",
-        red: "#cf6a55",
-        green: "#8fa876",
-        yellow: "#d9a85f",
-        blue: "#8ba3c7",
-        magenta: "#b58dae",
-        cyan: "#82a8a0",
-        white: "#d8d0c4",
-        brightBlack: "#6b6259",
-        brightRed: "#e08a76",
-        brightGreen: "#a9c290",
-        brightYellow: "#eec27e",
-        brightBlue: "#a9bedd",
-        brightMagenta: "#cfa9c8",
-        brightCyan: "#9fc4bc",
-        brightWhite: "#efe9df",
+        background: "#0c0c0e",
+        foreground: "#e4e4e8",
+        cursor: "#ffffff",
+        cursorAccent: "#0c0c0e",
+        selectionBackground: "#ffffff26",
+        black: "#17171b",
+        red: "#f0616a",
+        green: "#3fb950",
+        yellow: "#e3b341",
+        blue: "#58a6ff",
+        magenta: "#db6e8c",
+        cyan: "#56d4c0",
+        white: "#d4d4d9",
+        brightBlack: "#6d6d77",
+        brightRed: "#ff8288",
+        brightGreen: "#5fd177",
+        brightYellow: "#f2c95c",
+        brightBlue: "#7fbcff",
+        brightMagenta: "#ee8ea9",
+        brightCyan: "#7ce6d5",
+        brightWhite: "#f4f4f7",
       },
     });
     const fit = new FitAddon();
     term.loadAddon(fit);
-    term.loadAddon(new CanvasAddon());
     term.open(boxRef.current!);
     fit.fit();
 

@@ -4,9 +4,9 @@ import "@fontsource/jetbrains-mono/400.css";
 import "@fontsource/jetbrains-mono/400-italic.css";
 import "@fontsource/jetbrains-mono/500.css";
 import "@fontsource/jetbrains-mono/600.css";
-// só o itálico: Garamond entra como anotação de partitura, nunca como texto corrido
-import "@fontsource-variable/eb-garamond/wght-italic.css";
+import "@fontsource/jetbrains-mono/700.css";
 import App from "./App";
+import { Titlebar } from "./Titlebar";
 
 // mostra o erro em vez de tela branca se algo estourar no render
 class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { err: Error | null }> {
@@ -27,6 +27,7 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { err
 // sem StrictMode: o double-mount dele reinicializa o xterm/PTY e duplica agentes
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <ErrorBoundary>
+    <Titlebar />
     <App />
   </ErrorBoundary>,
 );

@@ -113,6 +113,31 @@ pub fn prewarm_path() {
     let _ = augmented_path();
 }
 
+/// Diz quais binários que o app roda estão no PATH aumentado. Alimenta a tela de
+/// boas-vindas: `claude` é obrigatório, `node` e `git` melhoram a experiência.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Prereqs {
+    claude: bool,
+    node: bool,
+    git: bool,
+}
+
+/// Resolvido = achou o arquivo (resolve_program devolve caminho ≠ nome cru).
+fn on_path(name: &str, path: &str) -> bool {
+    resolve_program(name, path) != name
+}
+
+#[tauri::command]
+pub fn check_prereqs() -> Prereqs {
+    let path = augmented_path();
+    Prereqs {
+        claude: on_path("claude", &path),
+        node: on_path("node", &path),
+        git: on_path("git", &path),
+    }
+}
+
 /// PATH do shell de login costuma ter dirs que o app GUI não herda.
 /// Base: PATH herdado + PATH do shell de login do usuário (rc dele) +
 /// fallbacks comuns (caso a resolução do shell falhe/estoure o timeout).

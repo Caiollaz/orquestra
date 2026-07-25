@@ -15,7 +15,7 @@ comanda num canvas, coordenando vários em paralelo. Decisões travadas:
 ## Stack
 - **Tauri 2** (Rust) + **React 19 + TS + Vite**.
 - PTY: `portable-pty` (wezterm). Git: shell `git worktree`. Persistência: `serde_json`.
-- Terminal: `@xterm/xterm` + addon-fit + **addon-canvas** (não webgl — não estoura contextos).
+- Terminal: `@xterm/xterm` + addon-fit, **renderer DOM** (texto escala nítido no zoom; canvas addon virava bitmap borrado — trocado em 0.6.2).
 - Canvas: **`@xyflow/react`** (pan/zoom + nós custom = terminal). State: `zustand` (a partir do M3).
 
 ## API Rust↔JS (Tauri commands)
@@ -58,7 +58,7 @@ A definir (M3+): `list/create/load/save_workspace`, `pick_directory` (tauri-plug
   dois bracketed-paste seguidos se atropelam no prompt do claude.
 
 ## Pontos delicados (ver §5 da arquitetura)
-- Muitos terminais: **addon-canvas** (não webgl). Thumbnail em zoom baixo só se medir dor.
+- Muitos terminais: renderer DOM (nítido no zoom). Se TUI pesado jankar, upgrade = webgl addon só no terminal focado.
 - Lifecycle: mata filhos no fechar; v1 sem detach/resume.
 - Readiness do claude: **idle-debounce + botão "semear agora"**, sem casar string do prompt.
 - Scrollback: **não** persiste no v1 (respawn limpo).

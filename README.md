@@ -29,6 +29,10 @@ PTY interativo** rodando `claude` ou um shell — e os agentes conversam entre s
 Baixe na [página de releases](https://github.com/Caiollaz/orquestra/releases/latest):
 Linux (`.deb`/`.rpm`/`.AppImage`), Windows (`.exe`/`.msi`) e macOS (`.dmg`).
 
+> **Antes de rodar:** o Orquestra executa o CLI `claude` (não o app de desktop).
+> Se um nó abre com `os error 2` / "arquivo não encontrado", falta instalar o
+> CLI — veja [Pré-requisitos](docs/PRE-REQUISITOS.md).
+
 ## Desenvolvimento
 
 Requisitos: Rust estável, Node 22+, pnpm.

@@ -1,44 +1,42 @@
 /* ============================================================
-   orquestra — fosso de orquestra à noite.
-   Fundo quente (palco apagado), latão como acento. Cada agente
-   carrega a cor do seu naipe via --section (setada inline no nó).
+   orquestra — ferramenta de dev, não sala de concerto.
+   Base neutra quase preta, contraste alto, sem cor de marca no
+   cromo: a única cor vem do naipe de cada agente (--section,
+   setado inline no nó) e do cabo incandescente quando passa dado.
 
-   Duas vozes tipográficas, com papéis fixos:
-   - --mono  : dado, endereço, terminal. Rótulo de nó é endereço de
-               rota (⇢NOME:), então é mono por semântica, não por
-               estética — nunca trocar por serifa.
-   - --annot : anotação de partitura (Garamond itálico, minúsculo).
-               Só onde o app "fala": título de diálogo, estado vazio,
-               placeholder, marcação de estado. Nunca texto corrido,
-               nunca manchete.
+   Uma voz tipográfica só: --mono. Rótulo de nó é endereço de rota
+   (⇢NOME:), então mono é semântica, não estética. Onde o app
+   "fala" (título de diálogo, estado vazio, placeholder, marcação
+   de estado) o mono vai em itálico — nunca outra família.
    ============================================================ */
 
 :root {
   color-scheme: dark; /* controles nativos (select/scrollbar) seguem o tema escuro */
-  --bg: #131110;
-  --panel: #1c1917;
-  --panel-2: #252120;
-  --border: #322c28;
-  --border-soft: #292420;
-  --text: #eae4da;
-  --muted: #9c9186;
-  --brass: #c69a55;
-  --brass-dim: #8a744f;
-  /* cabo em repouso é latão frio, quase escuro: quanto mais quieto o repouso,
-     mais o momento de brasa aparece. Sem azul de LED — a paleta é toda quente
-     e esse é o evento mais importante do app. */
-  --wire: #6b5636;
-  --wire-active: #ffd7a3;
-  --exited: #cf6a55;
-  --score: #d9c483;  /* partitura anotada (nó de nota) */
-  --portal: #7d8fa8; /* vidro do portal */
+  --bg: #09090b;
+  --panel: #101013;
+  --panel-2: #17171b;
+  --border: #26262b;
+  --border-soft: #1d1d21;
+  --text: #ededf0;
+  --muted: #85858f;
+  --accent: #e6e6ea;
+  --marca: #58a6ff;  /* q da marca — mesma cor da landing page e do 1º naipe */
+  --accent-dim: #6e6e78;
+  /* cabo em repouso é grafite, quase invisível: quanto mais quieto o repouso,
+     mais o momento em que o dado passa aparece. Aceso é branco puro — é o
+     evento mais importante do app e não disputa com o naipe de ninguém. */
+  --wire: #2c2c33;
+  --wire-active: #ffffff;
+  --exited: #f0616a;
+  --score: #d2d2d8;  /* papel do nó de nota */
+  --portal: #8492a6; /* vidro do portal */
   --radius: 8px;
   --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-  --annot: "EB Garamond Variable", ui-serif, Georgia, serif;
 }
 
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; margin: 0; }
+#root { display: flex; flex-direction: column; } /* barra de janela + app */
 
 :root {
   --cursor-arrow: url("/cursors/arrow.png") 8 3;
@@ -51,18 +49,41 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-.app { display: flex; flex-direction: row; height: 100vh; overflow: hidden; }
-/* a marca é mono; só o q é Garamond itálico. Uma letra trocada no meio da
+.app { display: flex; flex-direction: row; flex: 1; min-height: 0; overflow: hidden; }
+
+/* ---- barra de janela (decorations: false) ---------------------
+   Cromo, não palco: mesmo --panel da sidebar, então barra e sidebar
+   formam um L contínuo em volta do canvas. A marca aparece pequena e
+   apagada — a lockup grande é da Island. Botões reusam .ib (daí o
+   --s: 1), mas viram células retas de altura cheia: numa faixa de
+   32px, canto arredondado esbarraria na borda. Só o fechar ganha cor,
+   e só no hover — o mesmo vermelho de agente que saiu. */
+.titlebar {
+  --s: 1;
+  display: flex; align-items: center; flex: none;
+  height: 32px; padding-left: 14px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  user-select: none;
+}
+.tb-brand { font: 600 11px var(--mono); letter-spacing: 0.14em; color: var(--muted); }
+.tb-gap { flex: 1; }
+.titlebar .ib { width: 42px; height: 100%; border: none; border-radius: 0; }
+.titlebar .ib svg { width: 14px; height: 14px; }
+.titlebar .ib:hover { background: var(--panel-2); }
+.tb-close:hover { background: color-mix(in srgb, var(--exited) 20%, transparent); }
+.tb-close:hover svg { color: var(--exited); }
+/* a marca é mono; só o q é itálico. Uma letra trocada no meio da
    palavra — o mesmo gesto de uma anotação a lápis numa parte impressa. */
 .brand-q {
-  color: var(--brass); font-family: var(--annot); font-style: italic;
+  color: var(--marca); font-family: var(--mono); font-style: italic;
   font-weight: 500; font-size: 1.12em; line-height: 0;
 }
 
 /* foco de teclado: piso de qualidade, vale pra tudo que recebe foco */
 button:focus-visible, input:focus-visible, textarea:focus-visible,
 select:focus-visible, [tabindex]:focus-visible {
-  outline: 1px solid var(--brass); outline-offset: 1px;
+  outline: 1px solid var(--accent); outline-offset: 1px;
 }
 
 /* ---- sidebar (estúdios / workspaces) ------------------------- */
@@ -107,8 +128,8 @@ select:focus-visible, [tabindex]:focus-visible {
   transition: background 0.12s, border-color 0.12s;
 }
 .sb-item:hover, .sb-add:hover { background: var(--panel-2); }
-.sb-item.is-active { background: var(--panel-2); border-color: var(--brass-dim); }
-.sb-item.is-active .sb-badge { background: var(--brass); color: var(--bg); }
+.sb-item.is-active { background: var(--panel-2); border-color: var(--accent-dim); }
+.sb-item.is-active .sb-badge { background: var(--accent); color: var(--bg); }
 
 .sb-badge {
   display: inline-flex; align-items: center; justify-content: center;
@@ -129,24 +150,62 @@ select:focus-visible, [tabindex]:focus-visible {
 .react-flow { background: var(--bg); }
 
 /* island escala com a tela via --s (multiplicador); dims em calc(base * --s).
-   --s cresce em telas 2k/4k nos @media lá embaixo. */
+   --s cresce em telas 2k/4k nos @media lá embaixo.
+   Dynamic Island: pastilha por padrão, morfa pra barra no hover e estica pra
+   mostrar atividades (largura anima via WAAPI no Island.tsx; aqui só estados). */
+/* colada no topo do palco: sem raio em cima, pingando do cromo como uma aba */
 .island {
-  --s: 1;
-  position: absolute; top: calc(12px * var(--s)); left: 50%; transform: translateX(-50%);
+  --s: 1.15;
+  position: absolute; top: 0; left: 50%; transform: translateX(-50%);
   z-index: 10;
-  display: flex; align-items: center; gap: calc(4px * var(--s));
-  padding: calc(5px * var(--s)) calc(8px * var(--s));
-  background: rgba(24, 21, 19, 0.82);
+  display: flex; align-items: center;
+  padding: calc(7px * var(--s)) calc(10px * var(--s));
+  background: color-mix(in srgb, var(--panel) 90%, transparent);
   border: 1px solid var(--border);
-  border-radius: calc(14px * var(--s));
+  border-top: none;
+  border-radius: 0 0 calc(18px * var(--s)) calc(18px * var(--s));
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
   backdrop-filter: blur(14px);
   animation: island-in 0.22s ease-out;
+  overflow: hidden; white-space: nowrap;
+  transition: border-color 0.25s, box-shadow 0.25s;
 }
+.island.is-pill { cursor: pointer; }
+.island.is-open { box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6); }
+.island.is-activity { border-color: color-mix(in srgb, var(--act, var(--accent)) 45%, var(--border)); }
 @keyframes island-in {
   from { opacity: 0; transform: translateX(-50%) translateY(-8px) scale(0.96); }
   to { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
 }
+
+/* conteúdo entra com slide+blur (assinatura da island da Apple) */
+.island-swap { display: inline-flex; align-items: center; gap: calc(4px * var(--s)); animation: island-swap 0.32s cubic-bezier(0.2, 0.8, 0.2, 1); }
+@keyframes island-swap {
+  from { opacity: 0; transform: translateY(5px) scale(0.94); filter: blur(5px); }
+  to { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
+}
+.island-row { display: inline-flex; align-items: center; gap: calc(4px * var(--s)); }
+
+/* pastilha: marca + workspace + nº de agentes vivos (sem lâmpada piscando) */
+.island-pill { padding: calc(2px * var(--s)) calc(6px * var(--s)); }
+.island-count {
+  font: 600 calc(11px * var(--s)) var(--mono); color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  border-radius: 999px; padding: 0 calc(7px * var(--s)); line-height: calc(17px * var(--s));
+}
+
+/* atividade ao vivo: ponto estático com brilho + texto, cor pelo tom */
+.island-act { padding: calc(2px * var(--s)) calc(10px * var(--s)); gap: calc(9px * var(--s)); }
+.island-act.tone-flow { --act: #58a6ff; }
+.island-act.tone-ok { --act: #3fb950; }
+.island-act.tone-bad { --act: #f0616a; }
+.island-act-dot {
+  width: calc(8px * var(--s)); height: calc(8px * var(--s)); border-radius: 50%;
+  background: var(--act); box-shadow: 0 0 calc(10px * var(--s)) var(--act);
+  flex: none;
+}
+.island-act-text { font: 500 calc(12px * var(--s)) var(--mono); color: var(--text); }
+
 .island-id {
   display: inline-flex; align-items: center; gap: calc(8px * var(--s));
   padding: 0 calc(10px * var(--s)) 0 calc(6px * var(--s)); max-width: calc(220px * var(--s));
@@ -169,8 +228,8 @@ select:focus-visible, [tabindex]:focus-visible {
 .ib svg { width: calc(16px * var(--s)); height: calc(16px * var(--s)); opacity: 0.85; }
 .ib:hover { background: var(--panel-2); border-color: var(--border); }
 .ib:hover svg { opacity: 1; }
-.ib-accent svg { color: var(--brass); opacity: 1; }
-.ib:focus-visible, .sb-item:focus-visible, .agent-btn:focus-visible { outline: 1px solid var(--brass); outline-offset: 1px; }
+.ib-accent svg { color: var(--accent); opacity: 1; }
+.ib:focus-visible, .sb-item:focus-visible, .agent-btn:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
 
 /* escala a island (e a sidebar) em telas grandes */
 @media (min-width: 2200px) { .island { --s: 1.35; } .sidebar { width: 272px; } .sidebar.is-collapsed { width: 68px; } }
@@ -230,7 +289,7 @@ select:focus-visible, [tabindex]:focus-visible {
   fill: none;
 }
 .react-flow__edge.selected .react-flow__edge-path,
-.react-flow__edge:focus .react-flow__edge-path { stroke: var(--brass); }
+.react-flow__edge:focus .react-flow__edge-path { stroke: var(--accent); }
 .react-flow__edge.animated .react-flow__edge-path {
   stroke: var(--wire-active);
   stroke-width: 2.5;
@@ -238,21 +297,22 @@ select:focus-visible, [tabindex]:focus-visible {
   animation: dashdraw 0.55s linear infinite;
 }
 .react-flow__connection-path {
-  stroke: var(--brass); stroke-width: 2;
+  stroke: var(--accent); stroke-width: 2;
   stroke-dasharray: 6 5; stroke-linecap: round;
 }
 @media (prefers-reduced-motion: reduce) {
   .react-flow__edge.animated .react-flow__edge-path { animation: none; }
+  .island, .island-swap { animation: none; }
 }
 
 .react-flow__handle {
   width: 9px; height: 9px;
-  background: var(--section, var(--brass));
+  background: var(--section, var(--accent));
   border: 2px solid var(--bg);
 }
 
-.react-flow__resize-control.line { border-color: var(--brass-dim); }
-.react-flow__resize-control.handle { background: var(--brass); border-color: var(--bg); }
+.react-flow__resize-control.line { border-color: var(--accent-dim); }
+.react-flow__resize-control.handle { background: var(--accent); border-color: var(--bg); }
 
 /* ---- nó de agente (estante do músico) ------------------------ */
 
@@ -263,13 +323,13 @@ select:focus-visible, [tabindex]:focus-visible {
   display: flex; flex-direction: column;
   background: var(--panel);
   border: 1px solid var(--border);
-  border-left: 3px solid var(--section, var(--brass));
+  border-left: 3px solid var(--section, var(--accent));
   border-radius: var(--radius);
   overflow: hidden;
   box-shadow: 0 10px 32px rgba(0, 0, 0, 0.45);
   animation: node-in 0.18s ease-out;
 }
-.react-flow__node.selected .agent-node { border-color: var(--section, var(--brass)); }
+.react-flow__node.selected .agent-node { border-color: var(--section, var(--accent)); }
 
 .agent-head {
   display: flex; align-items: center; justify-content: space-between;
@@ -285,8 +345,8 @@ select:focus-visible, [tabindex]:focus-visible {
 /* lâmpada de status: acesa = vivo, apagada+vermelha = processo saiu */
 .agent-lamp {
   width: 7px; height: 7px; border-radius: 50%;
-  background: var(--section, var(--brass));
-  box-shadow: 0 0 6px var(--section, var(--brass));
+  background: var(--section, var(--accent));
+  box-shadow: 0 0 6px var(--section, var(--accent));
   flex: none;
 }
 .agent-node.is-exited .agent-lamp { background: var(--exited); box-shadow: none; }
@@ -300,7 +360,7 @@ select:focus-visible, [tabindex]:focus-visible {
 .agent-node.is-exited .agent-label { color: var(--exited); }
 .agent-node.is-exited { border-left-color: var(--exited); }
 /* "saiu" é marcação de estado, não dado: entra na voz de anotação (tacet) */
-.agent-exited-tag { font: italic 400 13px/1 var(--annot); color: var(--exited); margin-left: 5px; }
+.agent-exited-tag { font: italic 400 13px/1 var(--mono); color: var(--exited); margin-left: 5px; }
 
 .agent-actions { display: inline-flex; gap: 2px; }
 .agent-btn {
@@ -313,7 +373,7 @@ select:focus-visible, [tabindex]:focus-visible {
 .agent-btn svg { width: 13px; height: 13px; }
 .agent-btn:hover { color: var(--text); background: rgba(234, 228, 218, 0.08); }
 
-.agent-term { flex: 1; min-height: 0; background: #14110f; padding: 6px 2px 4px 8px; }
+.agent-term { flex: 1; min-height: 0; background: #0c0c0e; padding: 6px 2px 4px 8px; }
 .agent-node.is-exited .agent-term { opacity: 0.55; }
 .xterm-box { width: 100%; height: 100%; }
 
@@ -322,8 +382,8 @@ select:focus-visible, [tabindex]:focus-visible {
 .note-node {
   width: 100%; height: 100%;
   display: flex; flex-direction: column;
-  background: #201b12;
-  border: 1px solid #453a20;
+  background: #14141a;
+  border: 1px solid #2e2e36;
   border-left: 3px solid var(--score);
   border-radius: var(--radius);
   overflow: hidden;
@@ -335,14 +395,14 @@ select:focus-visible, [tabindex]:focus-visible {
 .note-head {
   display: flex; align-items: center; justify-content: space-between;
   padding: 6px 10px;
-  background: #2a2415;
-  border-bottom: 1px solid #3a3120;
+  background: #1b1b21;
+  border-bottom: 1px solid #26262d;
   cursor: grab; user-select: none;
 }
-/* a nota É uma partitura anotada: rótulo em Garamond itálico, como um
+/* a nota É uma anotação: rótulo em itálico, como um
    "dolce" escrito a lápis na margem da parte. */
 .note-label {
-  font: italic 500 15px/1 var(--annot);
+  font: italic 500 15px/1 var(--mono);
   color: var(--score);
   letter-spacing: 0.01em;
 }
@@ -351,19 +411,19 @@ select:focus-visible, [tabindex]:focus-visible {
 .note-area {
   flex: 1; min-height: 0; resize: none;
   background: transparent; border: none; outline: none;
-  color: #e8dfc9;
+  color: #e2e2e8;
   padding: 10px 12px;
   font: 13px/1.55 var(--mono);
 }
 /* placeholder é convite, texto digitado é dado: serifa no convite, mono no dado */
-.note-area::placeholder { font: italic 400 14px var(--annot); color: #8a7d5c; opacity: 0.9; }
+.note-area::placeholder { font: italic 400 14px var(--mono); color: #6d6d77; opacity: 0.9; }
 
 .agent-role-tag {
-  font: 11px var(--mono); color: var(--brass);
-  border: 1px solid var(--brass-dim); border-radius: 4px;
+  font: 11px var(--mono); color: var(--accent);
+  border: 1px solid var(--accent-dim); border-radius: 4px;
   padding: 0 5px; margin-left: 4px;
 }
-.agent-btn.is-on { color: var(--brass); }
+.agent-btn.is-on { color: var(--accent); }
 /* selo de contextos semeados: mesma família do papel, tom mais frio */
 .agent-ctx-tag {
   font: 11px var(--mono); color: var(--muted);
@@ -374,8 +434,8 @@ select:focus-visible, [tabindex]:focus-visible {
 /* ---- contextos + batuta ----------------------------------------- */
 
 .ctx-pick { cursor: pointer; }
-.ctx-pick.is-marked { border-color: var(--brass-dim); background: rgba(198, 154, 85, 0.06); }
-.ctx-check { accent-color: var(--brass); width: 14px; height: 14px; flex: 0 0 auto; }
+.ctx-pick.is-marked { border-color: var(--accent-dim); background: rgba(198, 154, 85, 0.06); }
+.ctx-check { accent-color: var(--accent); width: 14px; height: 14px; flex: 0 0 auto; }
 .ctx-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 10px; }
 .ctx-foot .role-new { margin-top: 0; }
 
@@ -392,7 +452,7 @@ select:focus-visible, [tabindex]:focus-visible {
   font: 14px var(--mono); padding: 14px 16px;
   border-bottom: 1px solid var(--border-soft);
 }
-.batuta-input::placeholder { font: italic 400 15px var(--annot); color: var(--muted); opacity: 0.85; }
+.batuta-input::placeholder { font: italic 400 15px var(--mono); color: var(--muted); opacity: 0.85; }
 .batuta-list { max-height: 52vh; overflow: auto; padding: 6px; }
 .batuta-item {
   display: flex; align-items: center; gap: 8px; width: 100%;
@@ -413,7 +473,7 @@ select:focus-visible, [tabindex]:focus-visible {
   border: 1px solid var(--border); border-radius: var(--radius);
   padding: 6px 8px; font: 12px var(--mono); cursor: pointer; outline: none;
 }
-.topbar .picker:hover { border-color: var(--brass-dim); }
+.topbar .picker:hover { border-color: var(--accent-dim); }
 
 /* ---- forma de diagrama ------------------------------------------ */
 
@@ -421,20 +481,20 @@ select:focus-visible, [tabindex]:focus-visible {
   width: 100%; height: 100%;
   display: flex; align-items: center; justify-content: center;
   background: rgba(40, 34, 30, 0.85);
-  border: 1.5px solid var(--brass-dim);
+  border: 1.5px solid var(--accent-dim);
   color: var(--text); text-align: center;
   padding: 6px 10px; position: relative;
   animation: node-in 0.18s ease-out;
 }
 .shape-box { border-radius: var(--radius); }
 .shape-pill { border-radius: 999px; }
-.shape-node.is-sel { border-color: var(--brass); }
+.shape-node.is-sel { border-color: var(--accent); }
 .shape-label { font: 500 12px var(--mono); color: var(--muted); pointer-events: none; }
 .shape-input {
   width: 90%; background: transparent; border: none; outline: none;
   color: var(--text); text-align: center; font: 500 12px var(--mono);
 }
-.shape-node .shape-handle { background: var(--brass-dim); }
+.shape-node .shape-handle { background: var(--accent-dim); }
 .shape-x {
   position: absolute; top: 3px; right: 4px;
   display: inline-flex; align-items: center; justify-content: center;
@@ -489,11 +549,11 @@ select:focus-visible, [tabindex]:focus-visible {
 }
 .modal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
 /* título do modal na voz de anotação, igual ao do diálogo */
-.modal-head b { font: italic 500 19px/1.1 var(--annot); font-weight: 500; letter-spacing: 0.01em; }
+.modal-head b { font: italic 500 19px/1.1 var(--mono); font-weight: 500; letter-spacing: 0.01em; }
 .modal-err { color: var(--exited); font-size: 12px; margin-bottom: 8px; }
 .role-list { display: flex; flex-direction: column; gap: 6px; }
 /* tela vazia é convite, não bilhete de sistema */
-.role-empty, .portal-empty { font: italic 400 14px/1.5 var(--annot); color: var(--muted); }
+.role-empty, .portal-empty { font: italic 400 14px/1.5 var(--mono); color: var(--muted); }
 .role-empty { padding: 8px 2px; }
 .role-row {
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
@@ -509,7 +569,7 @@ select:focus-visible, [tabindex]:focus-visible {
   color: var(--muted); border-radius: var(--radius);
   padding: 8px; cursor: pointer; font: 12px var(--mono);
 }
-.role-new:hover { border-color: var(--brass-dim); color: var(--text); }
+.role-new:hover { border-color: var(--accent-dim); color: var(--text); }
 .role-form { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
 .role-form input, .role-form textarea {
   background: var(--bg); color: var(--text);
@@ -521,14 +581,41 @@ select:focus-visible, [tabindex]:focus-visible {
   background: transparent; border: 1px solid var(--border); color: var(--text);
   border-radius: 4px; padding: 5px 10px; cursor: pointer; font: 12px var(--mono);
 }
-.modal .btn-claude { border-color: var(--brass-dim); color: var(--brass); }
-.modal button:hover { border-color: var(--brass-dim); }
+.modal .btn-claude { border-color: var(--accent-dim); color: var(--accent); }
+.modal button:hover { border-color: var(--accent-dim); }
 .modal .btn-danger { border-color: var(--exited); color: var(--exited); }
+
+/* ---- boas-vindas (primeiro uso) --------------------------------- */
+.wc { width: 520px; }
+.wc-hero { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+.wc-mark { font: 600 11px var(--mono); letter-spacing: 0.16em; color: var(--muted); text-transform: uppercase; }
+.wc-mark i { color: var(--marca); font-style: italic; }
+.wc-item { display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; border-top: 1px solid var(--border-soft); }
+.wc-dot {
+  flex: none; width: 18px; height: 18px; border-radius: 50%; margin-top: 1px;
+  display: flex; align-items: center; justify-content: center; font-size: 11px;
+}
+.wc-ok { background: color-mix(in srgb, #3fb950 22%, transparent); color: #3fb950; }
+.wc-no { background: color-mix(in srgb, var(--exited) 22%, transparent); color: var(--exited); }
+.wc-wait { color: var(--muted); }
+.wc-item-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.wc-item-body b { color: var(--text); font-weight: 500; }
+.wc-item-body span { color: var(--muted); font-size: 12px; line-height: 1.45; }
+.wc-fix {
+  display: flex; flex-direction: column; gap: 6px; margin: 4px 0 4px 28px;
+  padding: 10px; background: var(--bg); border: 1px solid var(--border-soft); border-radius: 4px;
+}
+.wc-fix span { color: var(--muted); font-size: 11px; }
+.wc code, .wc-fix code {
+  background: var(--panel-2); color: var(--accent); border: 1px solid var(--border-soft);
+  border-radius: 3px; padding: 4px 7px; font-size: 12px; word-break: break-all; user-select: all;
+}
+.wc-note { color: var(--muted); font-size: 11px; line-height: 1.5; margin: 12px 0 4px; }
 
 /* ---- dialog (prompt/confirm custom) ----------------------------- */
 
 .dialog { width: 400px; }
-.dialog-title { font: italic 500 19px/1.1 var(--annot); letter-spacing: 0.01em; margin-bottom: 10px; }
+.dialog-title { font: italic 500 19px/1.1 var(--mono); letter-spacing: 0.01em; margin-bottom: 10px; }
 /* o corpo explica o que vai acontecer: mono, porque quase sempre cita rótulo,
    caminho ou comando — serifa itálica em prosa longa cansa e mente sobre o tipo */
 .dialog-msg { color: var(--muted); font-size: 12px; line-height: 1.55; margin-bottom: 16px; }
@@ -543,7 +630,7 @@ select:focus-visible, [tabindex]:focus-visible {
   border: 1px solid var(--border); border-radius: var(--radius);
   padding: 8px 10px; font: 13px var(--mono); outline: none;
 }
-.dialog-field input:focus { border-color: var(--brass-dim); }
+.dialog-field input:focus { border-color: var(--accent-dim); }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
 
 /* ---- movimento -------------------------------------------------- */
@@ -568,3 +655,12 @@ button, select, a, label,
   cursor: var(--cursor-pointer), pointer;
 }
 .react-flow__pane { cursor: var(--cursor-arrow), default; }
+
+/* ---- ícones da @edusites/icons + presets de papel ---------------- */
+.icone { display: inline-flex; align-items: center; justify-content: center; line-height: 0; }
+.icone svg { display: block; }
+.role-presets-title {
+  font: 600 10px var(--mono); letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--muted); padding: 10px 2px 2px;
+}
+.role-row.is-preset { border-style: dashed; }

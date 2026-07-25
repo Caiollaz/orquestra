@@ -26,8 +26,11 @@ import { RolePicker } from "./RolePicker";
 import { ContextPicker } from "./ContextPicker";
 import { Batuta, type BatutaItem } from "./Batuta";
 import { Sidebar, folderName } from "./Sidebar";
+import { Island, islandNotify } from "./Island";
+import { Icone } from "./Icone";
 import { ContextMenu, type MenuState, type MenuItem } from "./ContextMenu";
 import { DialogHost, askText, askConfirm, alertMsg } from "./Dialog";
+import { Welcome, jaViuBoasVindas } from "./Welcome";
 import {
   forwardOutput, applyRole, createFloor, removeFloor, openEditor,
   listWorkspaces, loadWorkspace, saveWorkspace, deleteWorkspace,
@@ -46,28 +49,29 @@ const rotaKey = (dest: string, msg: string) => `${dest.toLowerCase()} :: ${msg.t
 // por quanto tempo uma rota que NÓS enviamos é tratada como eco (redraw do TUI)
 const ECO_MS = 120_000;
 
-// naipes da orquestra: cada agente novo pega a próxima cor (latão, cordas,
-// madeiras, percussão) — identidade visual pra distinguir nós de relance
-const SECTIONS = ["#c69a55", "#b3543f", "#6f8f5e", "#7d8fa8"];
+// naipes: cada agente novo pega a próxima cor — é a única cor do app, serve
+// pra distinguir nó de relance sobre a base neutra
+const SECTIONS = ["#58a6ff", "#3fb950", "#e3b341", "#db6e8c"];
 
-// ícones inline (stroke herda a cor do botão)
+// ícones da @edusites/icons (herda cor via currentColor; tamanho vem do CSS).
+// claude fica com o desenho próprio: é a fagulha da marca, não um ícone genérico.
 const icons = {
-  folder: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M4 5a2 2 0 0 1 2-2h3.2a2 2 0 0 1 1.4.6L12 5h6a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z" /></svg>,
-  shell: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><rect x="2" y="3" width="20" height="18" rx="2" /><path d="m6 9 4 3-4 3" /><path d="M12 16h5" /></svg>,
+  folder: <Icone nome="pasta" />,
+  shell: <Icone nome="terminal-cli" />,
   claude: <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden><path d="M12 2l1.8 6.6L19 4.9l-3.6 5.7L22 12l-6.6 1.4L19 19.1l-5.2-3.7L12 22l-1.8-6.6L5 19.1l3.6-5.7L2 12l6.6-1.4L5 4.9l5.2 3.7Z" /></svg>,
-  note: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M5 3h14a1 1 0 0 1 1 1v10l-6 6H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z" /><path d="M14 20v-5a1 1 0 0 1 1-1h5" /></svg>,
-  shape: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><rect x="3" y="6" width="8" height="6" rx="1" /><rect x="14" y="12" width="7" height="6" rx="1" /><path d="M11 9h3v6" /></svg>,
-  portal: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3c2.5 2.5 2.5 15 0 18M12 3c-2.5 2.5-2.5 15 0 18" /></svg>,
-  code: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="m8 6-6 6 6 6M16 6l6 6-6 6" /></svg>,
-  save: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M5 3h11l3 3v13a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z" /><path d="M8 3v5h7M8 21v-7h8v7" /></svg>,
-  layers: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="m12 3 9 5-9 5-9-5 9-5Z" /><path d="m3 13 9 5 9-5" /></svg>,
-  trash: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m2 0v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V7" /></svg>,
-  edit: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>,
-  clock: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>,
-  role: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><circle cx="12" cy="12" r="8" /><circle cx="12" cy="12" r="3" /></svg>,
-  send: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M5 12h14M13 6l6 6-6 6" /></svg>,
-  context: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M4 5a2 2 0 0 1 2-2h9l5 5v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z" /><path d="M14 3v5h5M8 13h7M8 17h5" /></svg>,
-  batuta: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><circle cx="6.5" cy="17.5" r="2.5" /><path d="M8.5 15.5 19 5" /></svg>,
+  note: <Icone nome="notas" />,
+  shape: <Icone nome="grafico-arvore" />,
+  portal: <Icone nome="globo" />,
+  code: <Icone nome="codigo" />,
+  save: <Icone nome="salvar" />,
+  layers: <Icone nome="quadrados" />,
+  trash: <Icone nome="lixeira" />,
+  edit: <Icone nome="editar" />,
+  clock: <Icone nome="relogio" />,
+  role: <Icone nome="alvo" />,
+  send: <Icone nome="enviar" />,
+  context: <Icone nome="documento-linhas" />,
+  batuta: <Icone nome="nota-musical" />,
 };
 
 export default function App() {
@@ -131,6 +135,7 @@ export default function App() {
   const [roleTarget, setRoleTarget] = useState<string | null>(null);
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [batuta, setBatuta] = useState(false);
+  const [welcome, setWelcome] = useState(!jaViuBoasVindas());
 
   // ── contextos ────────────────────────────────────────────────────
   // catálogo do repo + os "padrões do workspace" (semeados em todo agente
@@ -144,6 +149,8 @@ export default function App() {
   const defaultsRef = useRef<string[]>([]);
   defaultsRef.current = defaultContexts;
   const ctxSeededRef = useRef(new Set<string>());
+  // agentes que já receberam o texto das notas conectadas (3º estágio do seed)
+  const noteSeededRef = useRef(new Set<string>());
 
   const refreshWs = useCallback(() => { listWorkspaces().then(setWorkspaces).catch(() => {}); }, []);
   useEffect(() => { refreshWs(); }, [refreshWs]);
@@ -156,6 +163,8 @@ export default function App() {
 
   useEffect(() => {
     const un = listen<string>("agent-exited", (e) => {
+      const label = (nodesRef.current.find((n) => n.id === e.payload)?.data as { label?: string } | undefined)?.label;
+      if (label) islandNotify({ text: `${label} saiu`, tone: "bad" });
       setNodes((ns) => ns.map((n) => (n.id === e.payload ? { ...n, data: { ...n.data, exited: true } } : n)));
     });
     return () => { void un.then((f) => f()); };
@@ -172,6 +181,16 @@ export default function App() {
     const src = nodesRef.current.find((n) => n.id === c.source);
     const tgt = nodesRef.current.find((n) => n.id === c.target);
     if (!src || !tgt) return;
+    // nota→agente: o texto entra sozinho ao conectar (o ⇢ da nota é só reenviar)
+    if (src.type === "note" && tgt.type === "agent") {
+      const texto = (noteText.get(src.id) ?? "").trim();
+      if (texto) {
+        flashEdge(src.id, tgt.id);
+        rememberSent(tgt.id, texto);
+        void forwardOutput(tgt.id, texto).catch(() => {});
+      }
+      return;
+    }
     const sd = src.data as AgentNodeData;
     if (src.type !== "agent" || sd.cmd.kind !== "claude") return;
     const kind =
@@ -189,6 +208,9 @@ export default function App() {
   const flashEdge = useCallback((source: string, target: string) => {
     const match = (e: Edge) => e.source === source && e.target === target;
     setEdges((es) => es.map((e) => (match(e) ? { ...e, animated: true } : e)));
+    // atividade na island: quem falou com quem
+    const lbl = (id: string) => (nodesRef.current.find((n) => n.id === id)?.data as { label?: string } | undefined)?.label ?? id;
+    islandNotify({ text: `${lbl(source)} ⇢ ${lbl(target)}`, tone: "flow" });
     const key = `${source}->${target}`;
     const prev = flashTimers.current.get(key);
     if (prev) clearTimeout(prev);
@@ -205,6 +227,7 @@ export default function App() {
     lastLineRef.current.delete(id);
     seededRef.current.delete(id);
     ctxSeededRef.current.delete(id);
+    noteSeededRef.current.delete(id);
     sentRef.current.delete(id);
     const t = schedRef.current.get(id);
     if (t) { clearInterval(t); schedRef.current.delete(id); }
@@ -219,6 +242,7 @@ export default function App() {
   const agentRespawned = useCallback((id: string) => {
     seededRef.current.delete(id);
     ctxSeededRef.current.delete(id);
+    noteSeededRef.current.delete(id);
     sentRef.current.delete(id);
     lastLineRef.current.delete(id);
     setNodes((ns) => ns.map((n) => (n.id === id && (n.data as AgentNodeData).exited ? { ...n, data: { ...n.data, exited: false } } : n)));
@@ -295,6 +319,23 @@ export default function App() {
         const alvo = d.contexts?.length ? d.contexts : defaultsRef.current;
         if (seedContextFiles(id, alvo)) return;
         // catálogo ainda carregando: tenta de novo no próximo idle
+      }
+      // 3º idle: texto das notas já conectadas a este agente (nota→agente é
+      // automático — o botão ⇢ da nota vira só "reenviar após editar")
+      if (!noteSeededRef.current.has(id)) {
+        noteSeededRef.current.add(id);
+        const textos = edgesRef.current
+          .filter((e) => e.target === id)
+          .map((e) => nodesRef.current.find((n) => n.id === e.source))
+          .filter((n) => n?.type === "note")
+          .map((n) => (noteText.get(n!.id) ?? "").trim())
+          .filter(Boolean);
+        if (textos.length) {
+          const t = `(contexto das notas conectadas)\n${textos.join("\n\n")}`;
+          rememberSent(id, t);
+          void forwardOutput(id, t).catch(() => {});
+          return;
+        }
       }
     }
     const targets = edgesRef.current.filter((e) => e.source === id).map((e) => e.target);
@@ -558,12 +599,12 @@ export default function App() {
   useEffect(() => { persistRef.current = persistCurrent; }, [persistCurrent]);
 
   const doSave = async () => {
-    if (wsId) { await persistCurrent(); refreshWs(); return; }
+    if (wsId) { await persistCurrent(); refreshWs(); islandNotify({ text: "workspace salvo", tone: "ok" }); return; }
     const r = await askText("Salvar workspace", [{ label: "nome", placeholder: "meu-projeto" }]);
     const name = r?.[0]?.trim();
     if (!name) return;
     const id = `ws-${Date.now()}`;
-    try { await saveWorkspace(buildWorkspace(id, name)); setWsId(id); setWsName(name); refreshWs(); }
+    try { await saveWorkspace(buildWorkspace(id, name)); setWsId(id); setWsName(name); refreshWs(); islandNotify({ text: "workspace salvo", tone: "ok" }); }
     catch (e) { void alertMsg("Erro ao salvar", String(e)); }
   };
 
@@ -811,7 +852,17 @@ export default function App() {
         onToggle={() => setCollapsed((c) => !c)}
       />
       <main className="main">
-        <div className="island">
+        <Island
+          pill={
+            <span className="island-id island-pill" title={cwd}>
+              <span className="island-brand">or<span className="brand-q">q</span></span>
+              <span className="island-ws">{activeName}</span>
+              {nodes.filter((n) => n.type === "agent").length > 0 && (
+                <span className="island-count">{nodes.filter((n) => n.type === "agent" && !(n.data as AgentNodeData).exited).length}</span>
+              )}
+            </span>
+          }
+        >
           <span className="island-id" title={cwd}>
             <span className="island-brand">or<span className="brand-q">q</span></span>
             <span className="island-ws">{activeName}</span>
@@ -855,7 +906,7 @@ export default function App() {
           <button className="ib" onClick={() => setBatuta(true)} title="Batuta — paleta de comandos (Ctrl+K)">{icons.batuta}</button>
           <button className="ib" onClick={() => { void openEditor(activeCwd).catch((e) => alertMsg("Erro ao abrir editor", String(e))); }} title="Abrir no editor">{icons.code}</button>
           <button className="ib" onClick={doSave} title="Salvar workspace (Ctrl+S)">{icons.save}</button>
-        </div>
+        </Island>
         <div className="canvas">
           <ReactFlow
             nodes={nodes}
@@ -890,6 +941,7 @@ export default function App() {
       )}
       {batuta && <Batuta items={batutaItems()} onClose={() => setBatuta(false)} />}
       {menu && <ContextMenu menu={menu} onClose={() => setMenu(null)} />}
+      {welcome && <Welcome onClose={() => setWelcome(false)} />}
       <DialogHost />
     </div>
   );

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { listRoles, saveRole, deleteRole, type Role } from "./lib/tauri";
+import { ROLE_PRESETS } from "./role-presets";
 
 // Modal de papéis: lista os .md de <repo>/.orquestra/roles, aplica um a um agente,
 // e tem um form curto pra criar papel novo. Aplicar → apply_role semeia o corpo
@@ -34,7 +35,6 @@ export function RolePicker({ repoPath, onApply, onClose }: {
         <div className="modal-head"><b>Papéis</b><button className="agent-btn" onClick={onClose}>×</button></div>
         {err && <div className="modal-err">{err}</div>}
         <div className="role-list">
-          {roles.length === 0 && !creating && <div className="role-empty">Nenhum papel em .orquestra/roles ainda.</div>}
           {roles.map((r) => (
             <div className="role-row" key={r.file}>
               <div className="role-info">
@@ -44,6 +44,29 @@ export function RolePicker({ repoPath, onApply, onClose }: {
               <span className="role-actions">
                 <button className="btn-claude" onClick={() => { onApply(r); onClose(); }}>aplicar</button>
                 <button className="agent-btn" title="Excluir" onClick={() => deleteRole(repoPath, r.file).then(refresh).catch((e) => setErr(String(e)))}>×</button>
+              </span>
+            </div>
+          ))}
+          {/* presets prontos: um clique salva no repo e aplica */}
+          {ROLE_PRESETS.filter((p) => !roles.some((r) => r.file === p.file)).length > 0 && (
+            <div className="role-presets-title">sugeridos</div>
+          )}
+          {ROLE_PRESETS.filter((p) => !roles.some((r) => r.file === p.file)).map((p) => (
+            <div className="role-row is-preset" key={p.file}>
+              <div className="role-info">
+                <b>{p.name}</b>
+                <span>{p.description}</span>
+              </div>
+              <span className="role-actions">
+                <button
+                  className="btn-claude"
+                  onClick={async () => {
+                    try { await saveRole(repoPath, p); } catch (e) { setErr(String(e)); return; }
+                    onApply(p); onClose();
+                  }}
+                >
+                  usar
+                </button>
               </span>
             </div>
           ))}
