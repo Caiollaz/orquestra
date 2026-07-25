@@ -58,11 +58,14 @@ impl PtyState {
     }
 }
 
-/// O que rodar no PTY: claude interativo ou um shell.
+/// O que rodar no PTY: claude interativo, outro agente CLI (codex/opencode/
+/// antigravity/…) ou um shell. `Agent` é genérico: qualquer TUI de agente que
+/// entenda instruções coladas no stdin funciona com o protocolo ⇢.
 #[derive(Deserialize, Serialize, Clone)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum AgentCmd {
     Claude { extra_args: Vec<String> },
+    Agent { program: String, extra_args: Vec<String> },
     Shell { program: Option<String> },
 }
 
@@ -277,6 +280,7 @@ fn build_command(cmd: &AgentCmd, cwd: &str) -> CommandBuilder {
     let path = augmented_path();
     let mut b = match cmd {
         AgentCmd::Claude { extra_args } => command_for(resolve_program("claude", &path), extra_args),
+        AgentCmd::Agent { program, extra_args } => command_for(resolve_program(program, &path), extra_args),
         AgentCmd::Shell { program } => {
             let sh = program.clone().unwrap_or_else(default_shell);
             command_for(resolve_program(&sh, &path), &[])
@@ -426,6 +430,9 @@ mod tests {
         assert!(matches!(shell, AgentCmd::Shell { program: None }));
         let claude: AgentCmd = serde_json::from_str(r#"{"kind":"claude","extra_args":[]}"#).unwrap();
         assert!(matches!(claude, AgentCmd::Claude { .. }));
+        let agent: AgentCmd =
+            serde_json::from_str(r#"{"kind":"agent","program":"codex","extra_args":[]}"#).unwrap();
+        assert!(matches!(agent, AgentCmd::Agent { .. }));
     }
 
     #[test]

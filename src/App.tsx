@@ -53,6 +53,17 @@ const ECO_MS = 120_000;
 // pra distinguir nó de relance sobre a base neutra
 const SECTIONS = ["#58a6ff", "#3fb950", "#e3b341", "#db6e8c"];
 
+// LLM = recebe protocolo/contextos/notas por prosa (claude ou agente CLI
+// genérico); shell recebe comando cru
+const isLLM = (cmd: AgentCmd) => cmd.kind === "claude" || cmd.kind === "agent";
+
+// agentes CLI integrados além do claude (spawn resolve pelo PATH do usuário)
+const CLIS = [
+  { program: "codex", label: "codex", hint: "OpenAI Codex CLI" },
+  { program: "opencode", label: "opencode", hint: "OpenCode" },
+  { program: "antigravity", label: "antigravity", hint: "Antigravity CLI" },
+] as const;
+
 // ícones da @edusites/icons (herda cor via currentColor; tamanho vem do CSS).
 // claude fica com o desenho próprio: é a fagulha da marca, não um ícone genérico.
 const icons = {
@@ -72,6 +83,7 @@ const icons = {
   send: <Icone nome="enviar" />,
   context: <Icone nome="documento-linhas" />,
   batuta: <Icone nome="nota-musical" />,
+  robo: <Icone nome="robo" />,
 };
 
 export default function App() {
@@ -215,14 +227,14 @@ export default function App() {
       return;
     }
     const sd = src.data as AgentNodeData;
-    if (src.type !== "agent" || sd.cmd.kind !== "claude") return;
+    if (src.type !== "agent" || !isLLM(sd.cmd)) return;
     const kind =
       tgt.type === "note" ? "uma nota — escreva nela com ⇢nota: texto"
       : tgt.type === "portal" ? `um navegador — ⇢${(tgt.data as PortalNodeData).label}: URL navega o navegador até a URL`
       : tgt.type !== "agent" ? "uma forma de diagrama (sem interação)"
       : (tgt.data as AgentNodeData).cmd.kind === "shell"
         ? `um terminal shell — ⇢${(tgt.data as AgentNodeData).label}: comando executa o comando LÁ, não rode você mesmo`
-        : `um agente claude — fale com ele via ⇢${(tgt.data as AgentNodeData).label}: mensagem`;
+        : `um agente — fale com ele via ⇢${(tgt.data as AgentNodeData).label}: mensagem`;
     const label = tgt.type === "note" ? "nota" : (tgt.data as { label?: string }).label ?? tgt.id;
     void forwardOutput(c.source, `(sistema) você foi conectado ao nó "${label}": ${kind}. Responda apenas OK.`).catch(() => {});
   }, [dirty]);
@@ -327,7 +339,7 @@ export default function App() {
     if (!node) return;
     const d = node.data as AgentNodeData;
     const lines = readNewLines(id);
-    if (d.cmd.kind === "claude") {
+    if (isLLM(d.cmd)) {
       // 1º idle: protocolo ⇢NOME:. 2º idle: contextos. Em submissões separadas —
       // dois bracketed-paste juntos se atropelam no prompt do claude.
       if (!seededRef.current.has(id)) {
@@ -451,7 +463,7 @@ export default function App() {
     }
     setNodes((ns) => ns.map((n) => (n.id === id ? { ...n, data: { ...n.data, label } } : n)));
     dirty();
-    const isClaude = (n?: Node) => n?.type === "agent" && (n.data as AgentNodeData).cmd.kind === "claude";
+    const isClaude = (n?: Node) => n?.type === "agent" && isLLM((n.data as AgentNodeData).cmd);
     if (isClaude(node)) void forwardOutput(id, `(sistema) seu rótulo agora é "${label}" (era "${antes}").`).catch(() => {});
     for (const e of edgesRef.current.filter((e) => e.target === id)) {
       if (isClaude(nodesRef.current.find((n) => n.id === e.source)))
@@ -763,6 +775,7 @@ export default function App() {
     setMenu({ x: e.clientX, y: e.clientY, items: [
       { label: "Terminal shell", icon: icons.shell, onClick: () => addAgent({ kind: "shell", program: null }, "shell", pos) },
       { label: "Agente claude", icon: icons.claude, onClick: () => addAgent({ kind: "claude", extra_args: [] }, "claude", pos) },
+      ...CLIS.map((c) => ({ label: `Agente ${c.label}`, icon: icons.robo, onClick: () => addAgent({ kind: "agent", program: c.program, extra_args: [] }, c.label, pos) })),
       { label: "Bloco de contexto", icon: icons.note, onClick: () => addNote(pos) },
       { sep: true },
       { label: "Forma (diagrama)", icon: icons.shape, onClick: () => addShape("box", pos) },
@@ -775,8 +788,8 @@ export default function App() {
     const items: MenuItem[] = [];
     if (node.type === "agent") {
       // papel e contexto são PROSA: num shell cada linha do markdown viraria
-      // comando (com `>` truncando arquivo). Só oferece pra claude.
-      if ((node.data as AgentNodeData).cmd.kind === "claude") {
+      // comando (com `>` truncando arquivo). Só oferece pra agentes LLM.
+      if (isLLM((node.data as AgentNodeData).cmd)) {
         items.push(
           { label: "Atribuir papel", icon: icons.role, onClick: () => openRole(node.id) },
           { label: "Semear contextos", icon: icons.context, onClick: () => setCtxTarget(node.id) },
@@ -803,6 +816,7 @@ export default function App() {
     const it: BatutaItem[] = [
       { id: "n-shell", group: "criar", label: "Terminal shell", icon: icons.shell, run: () => addAgent({ kind: "shell", program: null }, "shell", centerPos()) },
       { id: "n-claude", group: "criar", label: "Agente claude", icon: icons.claude, run: () => addAgent({ kind: "claude", extra_args: [] }, "claude", centerPos()) },
+      ...CLIS.map((c) => ({ id: `n-${c.program}`, group: "criar", label: `Agente ${c.label}`, hint: c.hint, icon: icons.robo, run: () => addAgent({ kind: "agent", program: c.program, extra_args: [] }, c.label, centerPos()) })),
       { id: "n-note", group: "criar", label: "Bloco de contexto", icon: icons.note, run: () => addNote(centerPos()) },
       { id: "n-shape", group: "criar", label: "Forma (diagrama)", icon: icons.shape, run: () => addShape("box", centerPos()) },
       { id: "n-portal", group: "criar", label: "Portal (navegador)", icon: icons.portal, run: () => addPortal(centerPos()) },
@@ -826,7 +840,7 @@ export default function App() {
       const label = String((n.data as { label?: string }).label ?? n.id);
       it.push({ id: `go-${n.id}`, group: "nós", label: `Ir para ${label}`, hint: n.type, icon: icons.send,
         run: () => rfRef.current?.fitView({ nodes: [{ id: n.id }], duration: 350, maxZoom: 1.1 }) });
-      if (n.type === "agent" && (n.data as AgentNodeData).cmd.kind === "claude")
+      if (n.type === "agent" && isLLM((n.data as AgentNodeData).cmd))
         it.push({ id: `ctx-${n.id}`, group: "contextos", label: `Semear contextos em ${label}`, icon: icons.context, run: () => setCtxTarget(n.id) });
     }
     return it;
@@ -915,6 +929,19 @@ export default function App() {
           <span className="island-sep" />
           <button className="ib" onClick={() => addAgent({ kind: "shell", program: null }, "shell")} title="Terminal shell">{icons.shell}</button>
           <button className="ib ib-accent" onClick={() => addAgent({ kind: "claude", extra_args: [] }, "claude")} title="Agente claude">{icons.claude}</button>
+          <button
+            className="ib"
+            title="Outros agentes (codex, opencode, antigravity)"
+            onClick={(e) => {
+              const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+              setMenu({ x: r.left, y: r.bottom + 8, items: CLIS.map((c) => ({
+                label: `Agente ${c.label}`, icon: icons.robo,
+                onClick: () => addAgent({ kind: "agent", program: c.program, extra_args: [] }, c.label),
+              })) });
+            }}
+          >
+            {icons.robo}
+          </button>
           <button className="ib" onClick={() => addNote()} title="Bloco de contexto">{icons.note}</button>
           <button className="ib" onClick={() => addShape("box")} title="Forma (diagrama)">{icons.shape}</button>
           <button className="ib" onClick={() => addPortal()} title="Portal (navegador)">{icons.portal}</button>

@@ -3,6 +3,7 @@ import { invoke, Channel } from "@tauri-apps/api/core";
 // espelha o enum AgentCmd do Rust (tag "kind", enum rename_all camelCase → claude/shell)
 export type AgentCmd =
   | { kind: "claude"; extra_args: string[] }
+  | { kind: "agent"; program: string; extra_args: string[] } // codex/opencode/antigravity/…
   | { kind: "shell"; program: string | null };
 
 export function spawnAgent(

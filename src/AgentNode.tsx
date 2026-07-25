@@ -47,7 +47,7 @@ function AgentNodeImpl({ id, data, selected }: NodeProps) {
         </span>
         <span className="agent-actions">
           {/* papel é prosa: num shell cada linha viraria comando — só pra claude */}
-          {d.cmd.kind === "claude" && (
+          {d.cmd.kind !== "shell" && (
             <button className="agent-btn nodrag" title="Atribuir papel" onClick={() => d.onRole(id)}>{ni.role}</button>
           )}
           <button className={`agent-btn nodrag${d.scheduled ? " is-on" : ""}`} title="Agendar prompt" onClick={() => d.onSchedule(id)}>{ni.clock}</button>
