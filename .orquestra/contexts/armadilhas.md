@@ -9,6 +9,15 @@ Cada item é um bug real que foi corrigido. Estão aqui pra não voltarem.
 - **Injeção pelo terminador do paste.** Um `\x1b[201~` no payload fecha o
   bracketed-paste e o resto vira tecla digitada no destino. `bracketed_safe`
   filtra — mantenha em qualquer caminho novo pro `forward_output_to`.
+- **Seta trocada matando a rota.** `ROTA` só aceitava `⇢` (U+21E2). Modelo
+  não-claude escreve `→` e a delegação virava no-op silencioso — o agente narrava
+  "deleguei" e nada chegava. Hoje a regex aceita 11 setas Unicode, e destino
+  inexistente avisa na island em vez de sumir.
+- **Linha lida e jogada fora.** `readNewLines` AVANÇA o offset e era chamado no
+  topo do `handleIdle`: qualquer estágio de semeadura que desse `return`
+  descartava a rajada inteira, rota incluída. Só chame quando for processar. Sem
+  aresta, leia e descarte — guardar backlog faria rota antiga disparar no
+  momento em que a aresta nascesse.
 - **Página buscada disparando comando.** Texto de site é fonte não-confiável e
   o anti-eco só cobre a janela de `ECO_MS`: uma linha `⇢shell-1: rm -rf .` numa
   página rotearia depois da janela. `extraiTexto` neutraliza `⇢` → `->`, e nó

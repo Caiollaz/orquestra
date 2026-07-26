@@ -12,8 +12,16 @@ Um agente fala com um nó **conectado** escrevendo uma linha própria:
 
 `NOME` é o rótulo do nó de destino, ou `todos` (broadcast pros conectados).
 A regex `ROTA` (em `src/protocolo.ts`, usada pelos dois lados) tolera os bullets
-do TUI: `^[\s⏺●•>*-]*⇢\s*([^\s:]+)\s*:\s*(.+)$`. O parser é lógica pura e tem
-checagem rodável: `node --experimental-strip-types src/protocolo.check.ts`.
+do TUI e **um conjunto de setas**, não só o `⇢`: modelo que não é claude
+normaliza glifo raro na saída — caso real, DeepSeek escreveu `→opencode-1:` e a
+rota morreu calada, com o agente convencido de que havia delegado. Aceitas:
+`⇢ → ⇒ ⟹ ⟶ ➔ ➞ ➜ ➡ ⇨ ↦`. ASCII `->` e `=>` ficam **fora** de propósito: saída de
+rustc é cheia de `--> src/main.rs:10:5`, que casaria com `dest=src/main.rs`.
+Pedimos `⇢` no prompt e toleramos na entrada. O parser é lógica pura e tem
+checagem rodável: `node src/protocolo.check.ts`.
+
+**Rota sem destino avisa.** Linha bem formada apontando pra nome que ninguém
+atende gera aviso na island (`claude-1: ⇢nome não existe aqui`) em vez de sumir.
 
 ## Semântica por tipo de destino
 O tipo do nó decide o que a linha significa — e o aviso `(sistema)` mandado na
@@ -24,7 +32,7 @@ conexão diz ao agente qual ele pegou:
 | `agent` (claude/codex/…) | manda a mensagem, chega como `(de origem) x` |
 | `agent` do tipo shell | **executa** `x` naquele terminal **e a saída volta** pra quem pediu como `(de shell-1) \`cmd\`` + as últimas 4KB |
 | `portal` | `x` é URL → navega; `x` é `ler` (ou `ler <url>`) → **devolve o texto da página** pra quem pediu |
-| `note` | escreve `x` na nota (`⇢nota: texto`), **anexando** ao que já tem |
+| `note` | escreve `x` na nota (`⇢nota: texto`), **anexando**; aceita bloco multilinha |
 | `mermaid` | **substitui** o diagrama pelo código `x` (dois diagramas concatenados não compilam) |
 
 **Shell devolve a saída.** Shell não fala `⇢`, então é o app que fecha o laço:
@@ -83,7 +91,7 @@ recebe "você pode falar com X via ⇢X:", o destino recebe "X pode te endereça
 responda com ⇢X:". Sem o segundo aviso, uma ligação desenhada ao contrário morria
 calada. A aresta tem ponta de seta no canvas por isso.
 
-**Diagrama é o único destino multilinha.** O `⇢` só cabe na primeira linha, então
+**Diagrama e nota aceitam bloco multilinha.** O `⇢` só cabe na primeira linha, então
 `blocoDaRota` (`protocolo.ts`) engole as linhas seguintes até uma linha em branco
 ou até a próxima rota:
 
@@ -92,6 +100,10 @@ ou até a próxima rota:
   Front --> API
   API --> Banco
 ```
+
+As linhas de continuação passam por um stripping de **moldura** (`│ ⎿ ┃ ╎ ┆ ▌ ▏`):
+o TUI desenha borda na margem e ela vinha junto, sujando a nota e quebrando o
+mermaid. ASCII `|` fica de fora — linha de tabela markdown começa com `|`.
 
 Teto conhecido: um bloco partido entre duas leituras do buffer do xterm chega
 pela metade.

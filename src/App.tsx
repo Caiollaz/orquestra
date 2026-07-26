@@ -377,7 +377,7 @@ export default function App() {
   };
 
   const seedPrompt = (label: string, vizinhos: string) =>
-    `Você é o nó "${label}" num canvas do orquestra, junto com outros agentes. Mensagens de outros chegam como "(de nome) texto". Para falar com um nó conectado a você, escreva uma linha própria no formato ⇢NOME: texto — NOME é o título do nó de destino, ou a palavra todos para todos os conectados. Se o nó conectado for um terminal shell, ⇢NOME: comando digita e executa o comando NAQUELE terminal — quando o usuário pedir para rodar algo "no terminal", delegue assim, não execute você mesmo. Se o nó conectado for outro agente e o usuário pedir que ELE faça algo ("faça o codex implementar tal coisa"), delegue com ⇢NOME: em vez de fazer você mesmo: descreva a tarefa inteira na mensagem, porque ele não vê esta conversa. A resposta dele volta pra você como "(de NOME) texto" — espere por ela antes de concluir, e use o mesmo caminho para tirar dúvidas com ele. Para registrar algo numa nota conectada, escreva ⇢nota: texto. ${vizinhos} Você será avisado com "(sistema) ..." quando novas conexões forem criadas. Alinhamento: mantenha o quadro .orquestra/board.md na raiz do projeto — registre nele suas ações, decisões e status, e consulte-o antes de cada tarefa nova. Responda apenas OK.`;
+    `Você é o nó "${label}" num canvas do orquestra, junto com outros agentes. Mensagens de outros chegam como "(de nome) texto". Para falar com um nó conectado a você, escreva uma linha própria no formato ⇢NOME: texto — NOME é o título do nó de destino, ou a palavra todos para todos os conectados. Se o nó conectado for um terminal shell, ⇢NOME: comando digita e executa o comando NAQUELE terminal — quando o usuário pedir para rodar algo "no terminal", delegue assim, não execute você mesmo. Se o nó conectado for outro agente e o usuário pedir que ELE faça algo ("faça o codex implementar tal coisa"), delegue com ⇢NOME: em vez de fazer você mesmo: descreva a tarefa inteira na mensagem, porque ele não vê esta conversa. ATENÇÃO: delegar é ESCREVER a linha ⇢NOME: texto na sua saída, sozinha na linha, começando com o caractere ⇢ (copie ele daqui). Dizer "deleguei", anotar num arquivo ou descrever a tarefa em prosa NÃO entrega nada — só a linha entrega. A resposta dele volta pra você como "(de NOME) texto" — espere por ela antes de concluir, e use o mesmo caminho para tirar dúvidas com ele. Para registrar algo numa nota conectada, escreva ⇢nota: texto. ${vizinhos} Você será avisado com "(sistema) ..." quando novas conexões forem criadas. Alinhamento: mantenha o quadro .orquestra/board.md na raiz do projeto — registre nele suas ações, decisões e status, e consulte-o antes de cada tarefa nova. Responda apenas OK.`;
 
   // semeia num agente os contextos escolhidos (uma submissão só, via Rust) e
   // registra no nó o que foi semeado — persiste e vira selo no header.
@@ -452,12 +452,16 @@ export default function App() {
     const node = nodesRef.current.find((n) => n.id === id);
     if (!node) return;
     const d = node.data as AgentNodeData;
-    const lines = readNewLines(id);
+    // `readNewLines` AVANÇA o offset de leitura, então só pode ser chamado quando
+    // as linhas vão ser processadas de fato. Antes ele rodava aqui no topo e
+    // qualquer estágio abaixo que desse `return` descartava a rajada inteira —
+    // rota emitida junto com a semeadura sumia sem deixar rastro.
     // Shell ficou quieto depois de um comando delegado: a saída volta pra quem
     // pediu. Cauda e não cabeça — o que importa numa saída de comando é o final
     // (falha, resumo, prompt de volta).
     const espera = esperaShell.current.get(id);
     if (espera) {
+      const lines = readNewLines(id);
       esperaShell.current.delete(id);
       const saida = lines.join("\n").trim();
       const corte = trunca(saida || "(sem saída)", MAX_SAIDA_SHELL, "fim");
@@ -474,7 +478,9 @@ export default function App() {
       // dois bracketed-paste juntos se atropelam no prompt do claude.
       if (!seededRef.current.has(id)) {
         seededRef.current.add(id);
-        void forwardOutput(id, seedPrompt(d.label, vizinhosDe(id))).catch(() => {});
+        const p = seedPrompt(d.label, vizinhosDe(id));
+        rememberSent(id, p); // o prompt cita ⇢NOME: — não deixa o eco rotear
+        void forwardOutput(id, p).catch(() => {});
         return;
       }
       if (!ctxSeededRef.current.has(id)) {
@@ -516,7 +522,10 @@ export default function App() {
       }
     }
     const targets = edgesRef.current.filter((e) => e.source === id).map((e) => e.target);
-    if (!targets.length) return;
+    // sem aresta não há o que rotear, mas o offset TEM de avançar: guardar o
+    // backlog faria a rota antiga disparar no momento em que a aresta nascesse
+    if (!targets.length) { readNewLines(id); return; }
+    const lines = readNewLines(id);
     for (let i = 0; i < lines.length; i++) {
       const m = lines[i].match(ROTA);
       if (!m) continue;
@@ -530,6 +539,12 @@ export default function App() {
         eco!.delete(rotaKey(dest, msg)); // janela venceu: limpa e deixa passar
       }
       if (dest.toLowerCase() === "nota") {
+        // nota também aceita bloco multilinha: agente escrevendo relatório numa
+        // nota mandava só a primeira linha e o resto virava texto solto no
+        // terminal. Mesmo corte do diagrama — para em linha vazia ou próxima rota.
+        const bloco = blocoDaRota(lines, i);
+        msg = bloco.msg;
+        i = bloco.fim;
         targets.forEach((t) => {
           if (nodesRef.current.find((n) => n.id === t)?.type !== "note") return;
           flashEdge(id, t);
@@ -545,6 +560,13 @@ export default function App() {
           : targets.filter((t) => (nodesRef.current.find((n) => n.id === t)?.data as { label?: string } | undefined)?.label === dest);
       // Mermaid é multilinha e o ⇢ só cabe na primeira: quando o destino é um
       // diagrama, o resto do bloco vem junto (ver protocolo.ts).
+      // Rota bem formada apontando pra nome que ninguém atende sumia calada — foi
+      // exatamente isso que fez "o claude disse que delegou e nada chegou" virar
+      // um mistério. Agora a island diz.
+      if (!wanted.length) {
+        islandNotify({ text: `${d.label}: ⇢${dest} não existe aqui`, tone: "bad" });
+        continue;
+      }
       if (wanted.some((t) => nodesRef.current.find((n) => n.id === t)?.type === "mermaid")) {
         const bloco = blocoDaRota(lines, i);
         msg = bloco.msg;
