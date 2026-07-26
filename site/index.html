@@ -128,17 +128,35 @@
     }
     .link-fino:hover { color: var(--texto); border-color: var(--fraco); }
 
-    /* ---- nav -------------------------------------------------------- */
+    /* ---- nav: pastilha fixa, na coluna do grid -----------------------
+       Sem morph e sem animação: altura fixa e largura na mesma coluna do
+       `.wrap` (max-width 1140 − 24px de cada lado), então a borda da pastilha
+       cai exatamente na régua do conteúdo abaixo. `sticky` só pra acompanhar
+       a rolagem — nada muda de tamanho. */
     header.topo {
       position: sticky; top: 0; z-index: 50;
-      background: rgba(0, 0, 0, 0.72);
-      backdrop-filter: blur(16px) saturate(140%);
-      -webkit-backdrop-filter: blur(16px) saturate(140%);
-      border-bottom: 1px solid var(--borda);
+      padding: 14px 0 0;
+    }
+    /* véu atrás da pastilha: destacada da borda, o conteúdo rolava pelo vão
+       de cima e aparecia recortado acima dela. Degradê (não faixa sólida)
+       pra dissolver em vez de criar uma segunda borda concorrendo com a
+       pastilha. z-index -1 fica dentro do contexto do header: atrás do nav,
+       à frente da página. */
+    header.topo::before {
+      content: ""; position: absolute; inset: -1px 0 -30px; z-index: -1;
+      background: linear-gradient(to bottom, var(--preto) 48%, transparent);
+      pointer-events: none;
     }
     header.topo nav {
       display: flex; align-items: center; justify-content: space-between;
-      gap: 20px; height: 72px;
+      gap: 20px; height: 68px;
+      padding: 0 10px 0 20px;
+      background: color-mix(in srgb, var(--cartao-2) 86%, transparent);
+      border: 1px solid var(--borda);
+      border-radius: var(--pill);
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+      backdrop-filter: blur(16px) saturate(140%);
+      -webkit-backdrop-filter: blur(16px) saturate(140%);
     }
     .marca { display: inline-flex; align-items: center; gap: 10px; text-decoration: none; }
     .marca svg { width: 32px; height: 26px; flex: none; }
@@ -150,10 +168,6 @@
     .nav-meio a { font: 400 15px/1 var(--sg); color: var(--fraco); text-decoration: none; }
     .nav-meio a:hover { color: var(--texto); }
     .nav-dir { display: flex; align-items: center; gap: 14px; }
-    .versao {
-      font: 400 12.5px/1 var(--mono); color: var(--fraco);
-      padding: 6px 10px; border: 1px solid var(--borda); border-radius: var(--pill);
-    }
 
     /* ---- herói ------------------------------------------------------ */
     .heroi { position: relative; padding: 108px 0 0; }
@@ -166,14 +180,16 @@
       pointer-events: none;
     }
     .heroi h1 { margin-top: 26px; }
+    /* "rege" sem pílula: a batuta fica solta ao lado da palavra. A moldura
+       competia com o próprio título — num h1 desse tamanho o contorno lê como
+       botão, não como ênfase. */
     .heroi h1 .chip {
-      display: inline-flex; align-items: center; gap: 0.16em;
-      line-height: 0.84; padding: 0.1em 0.24em 0.14em 0.2em;
-      background: #17171b; border: 1px solid var(--borda);
-      border-radius: var(--pill);
-      vertical-align: baseline;
+      display: inline-flex; align-items: baseline; gap: 0.14em;
     }
-    .heroi h1 .chip svg { width: 0.52em; height: 0.52em; flex: none; }
+    .heroi h1 .chip svg {
+      width: 0.5em; height: 0.5em; flex: none;
+      align-self: center; /* baseline não vale pra SVG: centraliza na caixa da letra */
+    }
     .acoes {
       display: flex; align-items: center; justify-content: center;
       gap: 14px; margin-top: 38px; flex-wrap: wrap;
@@ -361,7 +377,6 @@
 
     @media (max-width: 900px) {
       .nav-meio { display: none; }
-      .versao { display: none; }
     }
     @media (max-width: 760px) {
       body { font-size: 16.5px; }
@@ -405,7 +420,6 @@
           <a href="https://github.com/Caiollaz/orquestra">GitHub</a>
         </div>
         <div class="nav-dir">
-          <span class="versao" id="versao">v0.8.1</span>
           <a class="btn btn-branco btn-nav" href="#estreia">Baixar</a>
         </div>
       </nav>
@@ -725,12 +739,6 @@
       var os = /Win/i.test(p) ? "Windows" : /Mac/i.test(p) ? "macOS" : /Linux|X11/i.test(p) ? "Linux" : null;
       if (os) document.getElementById("baixar-txt").textContent = "Baixar para " + os;
     })();
-
-    // a versão do badge apodrecia na mão (ficou em v0.6.2 por 2 releases)
-    fetch("https://api.github.com/repos/Caiollaz/orquestra/releases/latest")
-      .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (d) { if (d && d.tag_name) document.getElementById("versao").textContent = d.tag_name; })
-      .catch(function () {});
 
     // ---- canvas do herói: arrastar nós e mover a vista --------------------
     (function () {

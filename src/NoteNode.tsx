@@ -2,10 +2,13 @@ import { memo, useEffect, useState } from "react";
 import { NodeResizer, Handle, Position, type NodeProps } from "@xyflow/react";
 import { ni } from "./node-icons";
 import { noteText } from "./shared";
+import type { ModoNota } from "./nota";
 
 export type NoteNodeData = {
+  modo: ModoNota; // como o texto chega no agente: referência ou pedido
   onSend: (id: string) => void;
   onKill: (id: string) => void;
+  onModo: (id: string, modo: ModoNota) => void;
   onDirty?: () => void; // avisa o autosave (texto vive fora do estado do React)
 };
 
@@ -15,6 +18,10 @@ export type NoteWriteDetail = { id: string; text: string };
 // Bloco de contexto: texto livre que se liga a agentes.
 // ⇢ (source, direita) injeta o texto no stdin dos conectados (bracketed-paste).
 // handle de destino (esquerda) recebe o que agentes conectados escrevem via ⇢nota:.
+//
+// O modo no cabeçalho decide como o texto chega lá: "contexto" é referência,
+// "tarefa" é pedido pra implementar (ver src/nota.ts). É escolha do usuário
+// porque só quem escreveu sabe se aquilo é uma spec ou uma anotação.
 function NoteNodeImpl({ id, data, selected }: NodeProps) {
   const d = data as NoteNodeData;
   const [text, setText] = useState(noteText.get(id) ?? "");
@@ -41,7 +48,15 @@ function NoteNodeImpl({ id, data, selected }: NodeProps) {
       <Handle type="target" position={Position.Left} />
       <Handle type="source" position={Position.Right} />
       <div className="note-head">
-        <span className="note-label">contexto</span>
+        <button
+          className={`note-modo nodrag${d.modo === "tarefa" ? " is-tarefa" : ""}`}
+          title={d.modo === "tarefa"
+            ? "Tarefa: os agentes conectados recebem isto como pedido pra implementar. Clique pra virar contexto."
+            : "Contexto: os agentes conectados recebem isto como referência. Clique pra virar tarefa."}
+          onClick={() => d.onModo(id, d.modo === "tarefa" ? "contexto" : "tarefa")}
+        >
+          {d.modo}
+        </button>
         <span className="agent-actions">
           <button className="agent-btn nodrag" title="Injetar texto nos conectados" onClick={() => d.onSend(id)}>{ni.send}</button>
           <button className="agent-btn nodrag" title="Remover bloco" onClick={() => d.onKill(id)}>{ni.x}</button>

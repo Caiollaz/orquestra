@@ -28,8 +28,10 @@ export const killAgent = (agentId: string) =>
 export const forwardOutput = (toAgent: string, text: string) =>
   invoke<void>("forward_output", { toAgent, text });
 
-// binários que o app roda, resolvidos no PATH aumentado (tela de boas-vindas)
-export type Prereqs = { claude: boolean; node: boolean; git: boolean };
+// binários que o app roda, resolvidos no PATH aumentado (tela de boas-vindas).
+// `npx` é alternativa ao `claude`: sem o binário, o app roda o pacote npm
+// (ver PACOTE_NPM em pty.rs) — por isso ele conta como "dá pra usar".
+export type Prereqs = { claude: boolean; node: boolean; git: boolean; npx: boolean };
 export const checkPrereqs = () => invoke<Prereqs>("check_prereqs");
 
 // ── papéis (roles.rs) ───────────────────────────────────────────────
@@ -87,3 +89,8 @@ export const deleteWorkspace = (id: string) => invoke<void>("delete_workspace", 
 // ── editor externo (editor.rs) ──────────────────────────────────────
 export const openEditor = (path: string, editor?: string) =>
   invoke<void>("open_editor", { path, editor: editor ?? null });
+
+// ── portal-leitor (pagina.rs) ────────────────────────────────────────
+// busca o HTML/texto de uma URL fora do webview (o iframe do portal é
+// same-origin e não dá pra ler de dentro do app)
+export const fetchPage = (url: string) => invoke<string>("fetch_page", { url });

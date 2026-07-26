@@ -22,15 +22,18 @@ inventar um novo.
    conexão (ver contexto do protocolo).
 6. Toda mutação chama `dirty()`.
 
-## CLI de agente novo (tipo codex/opencode)
-1. Entrada em `CLIS` (`App.tsx`): `{ program, label, hint }` — `program` é o
-   binário real (antigravity é `agy`).
-2. Nada de Rust: `AgentCmd::Agent { program, extra_args }` já cobre. Se você
-   está escrevendo uma variante nova de `AgentCmd`, provavelmente errou.
-3. `isLLM()` já inclui `kind === "agent"` — o CLI recebe protocolo, contextos,
+## CLI de agente novo (tipo codex/gemini/opencode)
+1. Entrada em `CLIS` (`App.tsx`): `{ label, hint, icon, mk }` — o `program` do
+   `mk()` é o binário real (antigravity é `agy`).
+2. Nada de Rust **pro nó**: `AgentCmd::Agent { program, extra_args }` já cobre.
+   Se você está escrevendo uma variante nova de `AgentCmd`, provavelmente errou.
+3. Se o CLI existe como pacote npm, acrescente `(binário, pacote)` em
+   `PACOTE_NPM` (`pty.rs`) — aí ele roda por `npx -y` pra quem não instalou nada
+   global. Sem entrada ali, o binário passa a ser obrigatório.
+4. `isLLM()` já inclui `kind === "agent"` — o CLI recebe protocolo, contextos,
    notas, papéis e avisos igual ao claude.
-4. Confira que o binário resolve no PATH aumentado (`check_prereqs` cobre só
-   claude/node/git).
+5. Confira que o binário resolve no PATH aumentado (`check_prereqs` cobre só
+   claude/node/git/npx).
 
 ## Papel novo pronto (preset)
 Entrada em `role-presets.ts`. Todo preset fala o protocolo `⇢NOME:` — copie o

@@ -1,6 +1,7 @@
 mod contexts;
 mod editor;
 mod git;
+mod pagina;
 mod pty;
 mod roles;
 mod workspace;
@@ -40,6 +41,7 @@ pub fn run() {
             git::create_floor,
             git::remove_floor,
             editor::open_editor,
+            pagina::fetch_page,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

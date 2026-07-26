@@ -4,6 +4,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import {
   ReactFlow,
   Background,
+  MarkerType,
   addEdge,
   applyNodeChanges,
   applyEdgeChanges,
@@ -33,19 +34,22 @@ import {
   PiTarget, PiPaperPlaneTilt, PiFileText, PiMusicNotes, PiRobot, PiTerminal,
   PiFolderOpen, PiFolderPlus, PiCaretDown, PiSun, PiMoonStars,
 } from "react-icons/pi";
-import { SiClaude, SiGooglegemini } from "react-icons/si";
+import { SiClaude, SiGooglegemini, SiGoogle } from "react-icons/si";
 import { RiOpenaiFill } from "react-icons/ri";
 import { ContextMenu, type MenuState, type MenuItem } from "./ContextMenu";
 import { DialogHost, askText, askConfirm, alertMsg } from "./Dialog";
 import { Welcome, jaViuBoasVindas } from "./Welcome";
 import {
-  forwardOutput, applyRole, createFloor, removeFloor, openEditor,
+  forwardOutput, applyRole, createFloor, removeFloor, openEditor, fetchPage,
   listWorkspaces, loadWorkspace, saveWorkspace, deleteWorkspace,
   listContexts, applyContexts,
   type AgentCmd, type Role, type Floor, type WorkspaceMeta, type WsAgent, type Workspace, type CanvasState, type Context,
 } from "./lib/tauri";
 import { terminals, noteText, folderName } from "./shared";
 import { ROTA, rotaKey, blocoDaRota } from "./protocolo";
+import { enquadraNota, enquadraNotas, modoValido, MODO_PADRAO, type ModoNota } from "./nota";
+import { comandoPortal, normalizaUrl, extraiTexto } from "./pagina";
+import { trunca, kb } from "./texto";
 import { aplicaTema, temaSalvo, type Tema } from "./tema";
 import "./App.css";
 
@@ -74,8 +78,9 @@ const isLLM = (cmd: AgentCmd) => cmd.kind === "claude" || cmd.kind === "agent";
 const CLIS: { label: string; hint: string; icon: ReactNode; mk: () => AgentCmd }[] = [
   { label: "claude", hint: "Claude Code", icon: <SiClaude />, mk: () => ({ kind: "claude", extra_args: [] }) },
   { label: "codex", hint: "OpenAI Codex CLI", icon: <RiOpenaiFill />, mk: () => ({ kind: "agent", program: "codex", extra_args: [] }) },
+  { label: "gemini", hint: "Gemini CLI", icon: <SiGooglegemini />, mk: () => ({ kind: "agent", program: "gemini", extra_args: [] }) },
   { label: "opencode", hint: "OpenCode", icon: <PiTerminal />, mk: () => ({ kind: "agent", program: "opencode", extra_args: [] }) },
-  { label: "antigravity", hint: "Antigravity CLI", icon: <SiGooglegemini />, mk: () => ({ kind: "agent", program: "agy", extra_args: [] }) },
+  { label: "antigravity", hint: "Antigravity CLI", icon: <SiGoogle />, mk: () => ({ kind: "agent", program: "agy", extra_args: [] }) },
 ];
 
 // ícones Phosphor (react-icons/pi) — herdam cor via currentColor; o tamanho
@@ -133,7 +138,14 @@ export default function App() {
     }
     if (m0.size) sentRef.current.set(id, m0);
   }, []);
+  // Delegação pra shell: quem pediu, e o quê. O comando roda no PTY do shell e a
+  // saída dele NÃO tem linha ⇢ nenhuma, então sem isto o agente delegava
+  // `⇢shell-1: pnpm test` e nunca ficava sabendo o resultado — e o prompt de
+  // protocolo manda delegar exatamente assim. O laço fecha no próximo idle do
+  // shell: PTY não "termina", mas ficar quieto depois de imprimir é o sinal.
+  const esperaShell = useRef(new Map<string, { pedinte: string; comando: string }>());
   const schedRef = useRef(new Map<string, number>());
+  const schedPendRef = useRef(new Set<string>()); // agendamento armado, esperando o agente ficar ocioso
   // spec dos agendamentos (intervalo+texto) pra persistir no workspace
   const schedSpecRef = useRef(new Map<string, { secs: number; text: string }>());
   const rfRef = useRef<ReactFlowInstance | null>(null);
@@ -233,6 +245,22 @@ export default function App() {
 
   // ao ligar uma aresta, avisa o claude de origem quem é o alvo (senão ele não
   // sabe o label e executa tudo nele mesmo em vez de delegar)
+  // O que um nó de destino É, na voz que o agente lê. Fonte única: o aviso de
+  // conexão E a lista de vizinhos no prompt de protocolo saem daqui — antes só o
+  // onConnect sabia disso, então agente restaurado (que só recebe o prompt) não
+  // ficava sabendo de nada.
+  const descreveDestino = useCallback((tgt: Node): string => {
+    const rot = (tgt.data as { label?: string }).label ?? tgt.id;
+    if (tgt.type === "note") return "uma nota — escreva nela com ⇢nota: texto";
+    if (tgt.type === "portal") return `um navegador — ⇢${rot}: URL navega até a URL, e ⇢${rot}: ler devolve o texto da página pra você (⇢${rot}: ler URL faz os dois)`;
+    if (tgt.type === "mermaid") return `um diagrama mermaid — ⇢${rot}: seguido do código mermaid (pode ocupar várias linhas, até uma linha em branco) redesenha o diagrama`;
+    if (tgt.type !== "agent") return "um nó sem interação";
+    const cmd = (tgt.data as AgentNodeData).cmd;
+    return cmd.kind === "shell"
+      ? `um terminal shell — ⇢${rot}: comando executa o comando LÁ, não rode você mesmo, e a saída volta pra você como "(de ${rot}) …"`
+      : `um agente — fale com ele via ⇢${rot}: mensagem`;
+  }, []);
+
   const onConnect = useCallback((c: Connection) => {
     setEdges((es) => addEdge(c, es));
     dirty();
@@ -241,7 +269,10 @@ export default function App() {
     if (!src || !tgt) return;
     // nota→agente: o texto entra sozinho ao conectar (o ⇢ da nota é só reenviar)
     if (src.type === "note" && tgt.type === "agent") {
-      const texto = (noteText.get(src.id) ?? "").trim();
+      // agente que ainda não passou pelo estágio de notas vai receber a nota na
+      // semeadura: mandar aqui também entregava a MESMA nota duas vezes
+      if (!noteSeededRef.current.has(tgt.id)) return;
+      const texto = enquadraNota((src.data as NoteNodeData).modo, noteText.get(src.id) ?? "");
       if (texto) {
         flashEdge(src.id, tgt.id);
         rememberSent(tgt.id, texto);
@@ -251,17 +282,22 @@ export default function App() {
     }
     const sd = src.data as AgentNodeData;
     if (src.type !== "agent" || !isLLM(sd.cmd)) return;
-    const kind =
-      tgt.type === "note" ? "uma nota — escreva nela com ⇢nota: texto"
-      : tgt.type === "portal" ? `um navegador — ⇢${(tgt.data as PortalNodeData).label}: URL navega o navegador até a URL`
-      : tgt.type === "mermaid" ? `um diagrama mermaid — ⇢${(tgt.data as MermaidNodeData).label}: seguido do código mermaid (pode ocupar várias linhas, até uma linha em branco) redesenha o diagrama`
-      : tgt.type !== "agent" ? "um nó sem interação"
-      : (tgt.data as AgentNodeData).cmd.kind === "shell"
-        ? `um terminal shell — ⇢${(tgt.data as AgentNodeData).label}: comando executa o comando LÁ, não rode você mesmo`
-        : `um agente — fale com ele via ⇢${(tgt.data as AgentNodeData).label}: mensagem`;
+    const kind = descreveDestino(tgt);
     const label = tgt.type === "note" ? "nota" : (tgt.data as { label?: string }).label ?? tgt.id;
-    void forwardOutput(c.source, `(sistema) você foi conectado ao nó "${label}": ${kind}. Responda apenas OK.`).catch(() => {});
-  }, [dirty]);
+    const aviso = `(sistema) você foi conectado ao nó "${label}": ${kind}. Responda apenas OK.`;
+    rememberSent(c.source!, aviso);
+    void forwardOutput(c.source!, aviso).catch(() => {});
+    // A aresta é dirigida, então quem recebe também precisa saber que existe: sem
+    // isso, uma ligação desenhada "ao contrário" (codex→claude quando se queria
+    // claude→codex) morre calada e ninguém entende por que o claude não delega.
+    if (tgt.type === "agent" && isLLM((tgt.data as AgentNodeData).cmd)) {
+      const volta = `(sistema) o nó "${sd.label}" pode te endereçar; o que ele mandar chega como "(de ${sd.label}) …" e você responde com ⇢${sd.label}: texto. Responda apenas OK.`;
+      rememberSent(c.target!, volta);
+      void forwardOutput(c.target!, volta).catch(() => {});
+    }
+    // flashEdge fora das deps de propósito: é declarado abaixo daqui, e citá-lo
+    // no array (avaliado na hora) cai no TDZ. O corpo só roda depois.
+  }, [dirty, rememberSent, descreveDestino]);
 
   const flashTimers = useRef(new Map<string, number>());
   const flashEdge = useCallback((source: string, target: string) => {
@@ -288,9 +324,11 @@ export default function App() {
     ctxSeededRef.current.delete(id);
     noteSeededRef.current.delete(id);
     sentRef.current.delete(id);
+    esperaShell.current.delete(id);
     const t = schedRef.current.get(id);
     if (t) { clearInterval(t); schedRef.current.delete(id); }
     schedSpecRef.current.delete(id);
+    schedPendRef.current.delete(id);
     dirty();
   }, [dirty]);
 
@@ -304,6 +342,7 @@ export default function App() {
     noteSeededRef.current.delete(id);
     sentRef.current.delete(id);
     lastLineRef.current.delete(id);
+    esperaShell.current.delete(id); // processo novo: a saída antiga não vem mais
     setNodes((ns) => ns.map((n) => (n.id === id && (n.data as AgentNodeData).exited ? { ...n, data: { ...n.data, exited: false } } : n)));
   }, []);
 
@@ -324,8 +363,21 @@ export default function App() {
     return lines;
   }, []);
 
-  const seedPrompt = (label: string) =>
-    `Você é o nó "${label}" num canvas do orquestra, junto com outros agentes. Mensagens de outros chegam como "(de nome) texto". Para falar com um nó conectado a você, escreva uma linha própria no formato ⇢NOME: texto — NOME é o título do nó de destino, ou a palavra todos para todos os conectados. Se o nó conectado for um terminal shell, ⇢NOME: comando digita e executa o comando NAQUELE terminal — quando o usuário pedir para rodar algo "no terminal", delegue assim, não execute você mesmo. Para registrar algo numa nota conectada, escreva ⇢nota: texto. Você será avisado com "(sistema) ..." quando novas conexões forem criadas. Alinhamento: mantenha o quadro .orquestra/board.md na raiz do projeto — registre nele suas ações, decisões e status, e consulte-o antes de cada tarefa nova. Responda apenas OK.`;
+  // Vizinhos ATUAIS do agente, pra entrar no prompt de protocolo. Sem isso, um
+  // workspace recarregado tem agentes que sabem falar ⇢NOME: e não sabem nenhum
+  // nome — o grafo existe e eles estão amnésicos.
+  const vizinhosDe = (id: string) => {
+    const alvos = edgesRef.current
+      .filter((e) => e.source === id)
+      .map((e) => nodesRef.current.find((n) => n.id === e.target))
+      .filter((n): n is Node => !!n);
+    if (!alvos.length) return "Você ainda não está conectado a nenhum nó — sem conexão, não há a quem endereçar.";
+    return `Você está conectado a ${alvos.length} nó(s) e pode endereçar cada um: `
+      + alvos.map((t) => `"${(t.data as { label?: string }).label ?? t.id}" é ${descreveDestino(t)}`).join("; ") + ".";
+  };
+
+  const seedPrompt = (label: string, vizinhos: string) =>
+    `Você é o nó "${label}" num canvas do orquestra, junto com outros agentes. Mensagens de outros chegam como "(de nome) texto". Para falar com um nó conectado a você, escreva uma linha própria no formato ⇢NOME: texto — NOME é o título do nó de destino, ou a palavra todos para todos os conectados. Se o nó conectado for um terminal shell, ⇢NOME: comando digita e executa o comando NAQUELE terminal — quando o usuário pedir para rodar algo "no terminal", delegue assim, não execute você mesmo. Se o nó conectado for outro agente e o usuário pedir que ELE faça algo ("faça o codex implementar tal coisa"), delegue com ⇢NOME: em vez de fazer você mesmo: descreva a tarefa inteira na mensagem, porque ele não vê esta conversa. A resposta dele volta pra você como "(de NOME) texto" — espere por ela antes de concluir, e use o mesmo caminho para tirar dúvidas com ele. Para registrar algo numa nota conectada, escreva ⇢nota: texto. ${vizinhos} Você será avisado com "(sistema) ..." quando novas conexões forem criadas. Alinhamento: mantenha o quadro .orquestra/board.md na raiz do projeto — registre nele suas ações, decisões e status, e consulte-o antes de cada tarefa nova. Responda apenas OK.`;
 
   // semeia num agente os contextos escolhidos (uma submissão só, via Rust) e
   // registra no nó o que foi semeado — persiste e vira selo no header.
@@ -358,17 +410,71 @@ export default function App() {
     return true;
   }, [seedContexts]);
 
+  // Portal-leitor. Teto conservador abaixo do MAX_PASTE (16KB no Rust), com
+  // espaço pro cabeçalho e pro aviso de truncagem.
+  // ponytail: 12KB é chute — o teto real é o contexto do agente, não o PTY.
+  const MAX_LEITURA = 12 * 1024;
+  // saída de comando é menor de propósito: raramente os 12KB do meio ajudam, e
+  // um `pnpm test` verboso encheria o contexto do delegante com ruído
+  const MAX_SAIDA_SHELL = 4 * 1024;
+  // Fila de entrega: duas leituras seguidas colariam dois bracketed-paste juntos,
+  // o mesmo atropelo que a semeadura em 3 estágios evita.
+  // ponytail: fila global; por agente se um dia houver dez portais lendo.
+  const filaLeitura = useRef<Promise<unknown>>(Promise.resolve());
+  const lerPortal = useCallback((portalId: string, pedinteId: string, url: string) => {
+    const rotulo = (i: string) => (nodesRef.current.find((n) => n.id === i)?.data as { label?: string } | undefined)?.label ?? i;
+    const nome = rotulo(portalId);
+    const entrega = async () => {
+      let texto: string;
+      try {
+        if (!url) throw new Error(`portal sem URL — mande \u21e2${nome}: <url> primeiro`);
+        const extraido = extraiTexto(await fetchPage(url), url);
+        // página que monta o DOM no cliente chega vazia; dizer isso é mais útil
+        // que entregar três palavras de shell
+        if (extraido.length < 40) throw new Error("a página não trouxe texto legível (provavelmente renderizada por JS)");
+        const corte = trunca(extraido, MAX_LEITURA);
+        texto = `(de ${nome}) leu ${url}\n${corte.texto}`
+          + (corte.cortado ? `\n\n(…truncado: ${kb(MAX_LEITURA)} de ${kb(corte.bytes)} — peça \u21e2${nome}: ler <url mais específica>)` : "");
+      } catch (e) {
+        // erro NUNCA é silêncio: o agente pediu e está esperando
+        texto = `(de ${nome}) falha ao ler ${url || "(sem url)"}: ${e instanceof Error ? e.message : String(e)}`;
+      }
+      islandNotify({ text: `${nome} \u21e2 ${rotulo(pedinteId)}`, tone: "ok" });
+      rememberSent(pedinteId, texto);
+      await forwardOutput(pedinteId, texto).catch(() => {
+        islandNotify({ text: `${nome}: resposta não entregue`, tone: "bad" });
+      });
+    };
+    filaLeitura.current = filaLeitura.current.then(entrega, entrega);
+  }, [rememberSent]);
+
   const handleIdle = useCallback((id: string) => {
     const node = nodesRef.current.find((n) => n.id === id);
     if (!node) return;
     const d = node.data as AgentNodeData;
     const lines = readNewLines(id);
+    // Shell ficou quieto depois de um comando delegado: a saída volta pra quem
+    // pediu. Cauda e não cabeça — o que importa numa saída de comando é o final
+    // (falha, resumo, prompt de volta).
+    const espera = esperaShell.current.get(id);
+    if (espera) {
+      esperaShell.current.delete(id);
+      const saida = lines.join("\n").trim();
+      const corte = trunca(saida || "(sem saída)", MAX_SAIDA_SHELL, "fim");
+      const texto = `(de ${d.label}) \`${espera.comando}\`\n${corte.texto}`
+        + (corte.cortado ? `\n\n(…só o final: ${kb(MAX_SAIDA_SHELL)} de ${kb(corte.bytes)})` : "");
+      flashEdge(espera.pedinte, id);
+      islandNotify({ text: `${d.label} ⇢ ${(nodesRef.current.find((n) => n.id === espera.pedinte)?.data as { label?: string } | undefined)?.label ?? espera.pedinte}`, tone: "ok" });
+      rememberSent(espera.pedinte, texto);
+      void forwardOutput(espera.pedinte, texto).catch(() => {});
+      return;
+    }
     if (isLLM(d.cmd)) {
       // 1º idle: protocolo ⇢NOME:. 2º idle: contextos. Em submissões separadas —
       // dois bracketed-paste juntos se atropelam no prompt do claude.
       if (!seededRef.current.has(id)) {
         seededRef.current.add(id);
-        void forwardOutput(id, seedPrompt(d.label)).catch(() => {});
+        void forwardOutput(id, seedPrompt(d.label, vizinhosDe(id))).catch(() => {});
         return;
       }
       if (!ctxSeededRef.current.has(id)) {
@@ -382,19 +488,31 @@ export default function App() {
       // 3º idle: texto das notas já conectadas a este agente (nota→agente é
       // automático — o botão ⇢ da nota vira só "reenviar após editar")
       if (!noteSeededRef.current.has(id)) {
-        noteSeededRef.current.add(id);
-        const textos = edgesRef.current
+        const notas = edgesRef.current
           .filter((e) => e.target === id)
           .map((e) => nodesRef.current.find((n) => n.id === e.source))
           .filter((n) => n?.type === "note")
-          .map((n) => (noteText.get(n!.id) ?? "").trim())
-          .filter(Boolean);
-        if (textos.length) {
-          const t = `(contexto das notas conectadas)\n${textos.join("\n\n")}`;
+          .map((n) => ({ modo: (n!.data as NoteNodeData).modo, texto: noteText.get(n!.id) ?? "" }));
+        const t = enquadraNotas(notas);
+        // Só marca como semeado quando HAVIA texto: quem liga a nota vazia e
+        // escreve depois pega no próximo idle. Antes o estágio queimava aqui e a
+        // nota nunca chegava sozinha.
+        if (t) {
+          noteSeededRef.current.add(id);
           rememberSent(id, t);
           void forwardOutput(id, t).catch(() => {});
           return;
         }
+      }
+    }
+    // agendamento armado e o agente está ocioso: agora é hora
+    if (schedPendRef.current.has(id)) {
+      schedPendRef.current.delete(id);
+      const spec = schedSpecRef.current.get(id);
+      if (spec) {
+        rememberSent(id, spec.text);
+        void forwardOutput(id, spec.text).catch(() => {});
+        return;
       }
     }
     const targets = edgesRef.current.filter((e) => e.source === id).map((e) => e.target);
@@ -419,8 +537,10 @@ export default function App() {
         });
         continue;
       }
+      // sem caixa: o guarda de renomear reserva "todos" case-insensitive, então
+      // ⇢TODOS: batia no nome de ninguém e sumia calado
       const wanted =
-        dest === "todos"
+        dest.toLowerCase() === "todos"
           ? targets
           : targets.filter((t) => (nodesRef.current.find((n) => n.id === t)?.data as { label?: string } | undefined)?.label === dest);
       // Mermaid é multilinha e o ⇢ só cabe na primeira: quando o destino é um
@@ -440,27 +560,49 @@ export default function App() {
           window.dispatchEvent(new CustomEvent("diagram-write", { detail: { id: t, src: msg } }));
           return;
         }
-        // portal não tem PTY: a mensagem é uma URL → navega
+        // portal não tem PTY: a mensagem é uma URL (navega) ou o verbo `ler`
         if (tn.type === "portal") {
-          const u = msg.trim().replace(/^<|>$/g, "");
-          setPortalUrl(t, /^https?:\/\//.test(u) ? u : `https://${u}`);
+          const cmd = comandoPortal(msg);
+          const nova = cmd.url ? normalizaUrl(cmd.url) : null;
+          if (nova) setPortalUrl(t, nova);
+          if (cmd.ler) {
+            // SEGURANÇA: shell não recebe resposta. Este laço roda pra TODO nó de
+            // agente (o isLLM lá em cima só protege a semeadura), e colar uma
+            // página num prompt de bash é execução de comando.
+            if (isLLM(d.cmd)) lerPortal(t, id, nova ?? (tn.data as PortalNodeData).url);
+            else islandNotify({ text: `${d.label}: shell não lê página`, tone: "bad" });
+          }
           return;
         }
         // Shell recebe o texto CRU: o prefixo "(de X)" viraria comando inválido.
         const isShell = tn.type === "agent" && (tn.data as AgentNodeData).cmd.kind === "shell";
+        // shell não fala ⇢, então é o app que devolve a saída pra quem pediu
+        if (isShell && isLLM(d.cmd)) esperaShell.current.set(t, { pedinte: id, comando: msg });
         rememberSent(t, msg);
         void forwardOutput(t, isShell ? msg : `(de ${d.label}) ${msg}`).catch(() => {});
       });
     }
-  }, [readNewLines, flashEdge, rememberSent, seedContextFiles]);
+  }, [readNewLines, flashEdge, rememberSent, seedContextFiles, lerPortal]);
 
   const sendFrom = useCallback((sourceId: string) => {
     const targets = edgesRef.current.filter((e) => e.source === sourceId).map((e) => e.target);
     if (!targets.length) return;
+    const src = nodesRef.current.find((n) => n.id === sourceId);
     const term = terminals.get(sourceId);
-    const text = (term?.getSelection() || noteText.get(sourceId) || "").trim();
+    const bruto = (term?.getSelection() || noteText.get(sourceId) || "").trim();
+    if (!bruto) return;
+    // nota vai enquadrada (o agente precisa saber se é spec ou referência);
+    // seleção de terminal vai crua — é o trecho que o usuário escolheu a dedo
+    const text = src?.type === "note" ? enquadraNota((src.data as NoteNodeData).modo, bruto) : bruto;
     if (!text) return;
-    targets.forEach((t) => { flashEdge(sourceId, t); rememberSent(t, text); void forwardOutput(t, text).catch(() => {}); });
+    targets.forEach((t) => {
+      // só nó com PTY recebe colagem: nota/diagrama/portal não têm, e o erro do
+      // Rust ("agente não encontrado") era engolido pelo catch
+      if (nodesRef.current.find((n) => n.id === t)?.type !== "agent") return;
+      flashEdge(sourceId, t);
+      rememberSent(t, text);
+      void forwardOutput(t, text).catch(() => {});
+    });
   }, [flashEdge, rememberSent]);
 
   const openRole = useCallback((id: string) => setRoleTarget(id), []);
@@ -511,10 +653,10 @@ export default function App() {
 
   // liga o intervalo e registra o spec (o spec vai pro workspace no autosave)
   const startSchedule = useCallback((id: string, secs: number, text: string) => {
-    const t = window.setInterval(() => {
-      rememberSent(id, text);
-      void forwardOutput(id, text).catch(() => {});
-    }, secs * 1000);
+    // O relógio só ARMA; quem dispara é o idle do agente (ver handleIdle). Antes
+    // era setInterval cego: colava o prompt no meio do trabalho, atropelando o
+    // que o agente estava escrevendo e às vezes empilhando duas colagens.
+    const t = window.setInterval(() => { schedPendRef.current.add(id); }, secs * 1000);
     schedRef.current.set(id, t);
     schedSpecRef.current.set(id, { secs, text });
     setNodes((ns) => ns.map((n) => (n.id === id ? { ...n, data: { ...n.data, scheduled: true } } : n)));
@@ -526,6 +668,7 @@ export default function App() {
       clearInterval(existing);
       schedRef.current.delete(id);
       schedSpecRef.current.delete(id);
+      schedPendRef.current.delete(id);
       setNodes((ns) => ns.map((n) => (n.id === id ? { ...n, data: { ...n.data, scheduled: false } } : n)));
       dirty();
       return;
@@ -571,7 +714,13 @@ export default function App() {
     setNodes((ns) => [...ns, { id, type: "agent", position: pos ?? gridPos(ns.length), width: 480, height: 320, data }]);
     dirty();
   };
-  const noteData = (): NoteNodeData => ({ onKill: killNode, onSend: sendFrom, onDirty: dirty });
+  const setNoteModo = (id: string, modo: ModoNota) => {
+    setNodes((ns) => ns.map((n) => (n.id === id ? { ...n, data: { ...n.data, modo } } : n)));
+    dirty();
+  };
+  const noteData = (modo: ModoNota = MODO_PADRAO): NoteNodeData => ({
+    modo, onKill: killNode, onSend: sendFrom, onModo: setNoteModo, onDirty: dirty,
+  });
   const addNote = (pos?: XYPosition) => {
     const id = `note-${++seq}`;
     setNodes((ns) => [...ns, { id, type: "note", position: pos ?? { x: 60, y: 60 + ns.length * 40 }, width: 280, height: 180, data: noteData() }]);
@@ -650,7 +799,7 @@ export default function App() {
               schedule: schedSpecRef.current.get(n.id) ?? null,
             } };
           }
-          case "note": return { ...base, data: { text: noteText.get(n.id) ?? "" } };
+          case "note": return { ...base, data: { text: noteText.get(n.id) ?? "", modo: (d as { modo?: string }).modo ?? MODO_PADRAO } };
           case "mermaid": return { ...base, data: { label: d.label ?? "", src: noteText.get(n.id) ?? "" } };
           case "portal": return { ...base, data: { label: d.label ?? "", url: d.url ?? "" } };
           default: return { ...base, data: {} };
@@ -684,6 +833,7 @@ export default function App() {
     for (const t of schedRef.current.values()) clearInterval(t);
     schedRef.current.clear();
     schedSpecRef.current.clear();
+    schedPendRef.current.clear();
     noteText.clear();
     lastLineRef.current.clear();
     seededRef.current.clear();
@@ -723,7 +873,7 @@ export default function App() {
             }
             case "note":
               noteText.set(cn.id, String(d.text ?? ""));
-              return { ...base, data: noteData() };
+              return { ...base, data: noteData(modoValido(d.modo)) };
             case "mermaid":
               noteText.set(cn.id, String(d.src ?? ""));
               return { ...base, data: mermaidData(String(d.label ?? cn.id)) };
@@ -884,6 +1034,9 @@ export default function App() {
       { id: "a-folder", group: "workspace", label: "Abrir pasta…", icon: icons.folder, run: () => void newWorkspaceFromFolder() },
       { id: "a-editor", group: "workspace", label: "Abrir no editor", icon: icons.code, run: () => void openEditor(activeCwd).catch((e) => alertMsg("Erro ao abrir editor", String(e))) },
       { id: "f-new", group: "floors", label: "Novo floor…", icon: icons.layers, run: () => void addFloor() },
+      // sem isto o tour só existe no primeiro uso: quem já fechou uma vez
+      // (localStorage) nunca mais vê, justo quem está perdido
+      { id: "a-ajuda", group: "ajuda", label: "Como usar o orquestra", hint: "boas-vindas", icon: icons.batuta, run: () => setWelcome(true) },
     ];
     for (const w of workspaces) {
       if (w.id === wsId) continue;
@@ -1033,6 +1186,9 @@ export default function App() {
             onPaneContextMenu={paneContext}
             onNodeContextMenu={nodeContext}
             proOptions={{ hideAttribution: true }}
+            /* a aresta é DIRIGIDA (só source→target roteia) e sem ponta ninguém
+               vê isso: ligação desenhada ao contrário virava mistério */
+            defaultEdgeOptions={{ markerEnd: { type: MarkerType.ArrowClosed, width: 18, height: 18 } }}
             minZoom={0.2}
             maxZoom={2}
             /* roda/touchpad tratados no onWheel do .canvas: vertical = zoom

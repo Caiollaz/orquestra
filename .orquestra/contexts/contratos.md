@@ -33,6 +33,11 @@ git, editor, qualquer coisa. O PATH da GUI vem capado (não vê `~/.local/bin`,
 nvm, brew…). O PATH aumentado também vai como env pro filho, senão os
 subprocessos do agente quebram (`node: not found`).
 
+Pra **agente**, o ponto de entrada é `invocacao(nome, path)`, não
+`resolve_program` direto: ela devolve `(programa, args)` e cai pro
+`npx -y <pacote>` (tabela `PACOTE_NPM`) quando o binário não existe. Quem chamar
+`resolve_program` na mão pra spawnar agente tira o npx da jogada sem perceber.
+
 ## 5. `dirty()` no autosave
 Toda mutação de canvas chama `dirty()`. `setNodes` direto sem `dirty()` = mudança
 que não persiste (já aconteceu com floors).

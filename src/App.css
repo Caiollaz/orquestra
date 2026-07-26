@@ -44,6 +44,12 @@
   --sombra-flutuante: 0 8px 30px rgba(0, 0, 0, 0.5); /* island */
   --sombra-modal: 0 18px 52px rgba(0, 0, 0, 0.6);    /* menu, modal, batuta */
   --radius: 10px;
+  --radius-p: 8px; /* campo, botão — irmão menor do raio do nó */
+  /* polegar da barra de rolagem e halo de foco saem de --muted/--marca via
+     color-mix: assim o tema claro herda os dois sem redeclarar nada. */
+  --thumb: color-mix(in srgb, var(--muted) 32%, transparent);
+  --thumb-on: color-mix(in srgb, var(--muted) 60%, transparent);
+  --foco: color-mix(in srgb, var(--marca) 18%, transparent);
   --sans: "Space Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 }
@@ -85,10 +91,6 @@
 html, body, #root { height: 100%; margin: 0; }
 #root { display: flex; flex-direction: column; } /* barra de janela + app */
 
-:root {
-  --cursor-arrow: url("/cursors/arrow.png") 8 3;
-  --cursor-pointer: url("/cursors/pointer.png") 15 4;
-}
 body {
   background: var(--bg);
   color: var(--text);
@@ -129,11 +131,72 @@ body {
   font-weight: 600; font-size: 1.06em; line-height: 0;
 }
 
-/* foco de teclado: piso de qualidade, vale pra tudo que recebe foco */
+/* foco de teclado: piso de qualidade, vale pra tudo que recebe foco.
+   Azul da marca (era cinza): foco é estado do sistema, e o único outro azul
+   do app é o cabo aceso — os dois querem dizer "aqui está acontecendo algo". */
 button:focus-visible, input:focus-visible, textarea:focus-visible,
-select:focus-visible, [tabindex]:focus-visible {
-  outline: 1px solid var(--accent); outline-offset: 1px;
+select:focus-visible, [tabindex]:focus-visible, a:focus-visible {
+  outline: 2px solid var(--marca); outline-offset: 2px; border-radius: 4px;
 }
+/* Campo é exceção: mostra foco na própria borda + halo, e o `outline: none`
+   do chassi lá embaixo já impede o anel duplo. */
+
+/* ---- barra de rolagem -------------------------------------------
+   A nativa é um bloco cinza largo que rouba a cena no meio do cromo escuro
+   (no Windows, principalmente). Aqui ela é fina, sem trilho, e o polegar só
+   ganha contraste no hover: rolagem é informação secundária.
+   Os dois lados NÃO convivem: desde o Chrome 121, declarar scrollbar-width/
+   -color faz o motor ignorar os ::-webkit-scrollbar inteiros e voltar pra
+   nativa. Como o Tauri roda WebKitGTK/WebView2/WKWebView, quem manda aqui é o
+   webkit — o padrão fica atrás de @supports, que só o Gecko atravessa. */
+@supports not selector(::-webkit-scrollbar) {
+  * { scrollbar-width: thin; scrollbar-color: var(--thumb) transparent; }
+}
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--thumb);
+  /* borda transparente + background-clip = "padding" que afina o polegar sem
+     encolher a área de clique, que continua os 10px inteiros */
+  border: 3px solid transparent;
+  background-clip: padding-box;
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--thumb-on); background-clip: padding-box; }
+::-webkit-scrollbar-corner { background: transparent; }
+
+/* ---- chassi dos campos -------------------------------------------
+   Antes cada modal tinha o seu: raio 4 em três lugares e 10 noutro, foco
+   cinza em dois e nenhum nos outros dois. Um chassi só, na linguagem da
+   landing — superfície funda, borda fina, e o foco é o azul da marca com
+   halo em vez de trocar a borda de cinza pra outro cinza.
+   A fronteira mono/sans declarada no topo deste arquivo continua valendo:
+   a FAMÍLIA vem de quem usa o campo, não daqui. */
+.campo,
+.dialog-field input,
+.role-form input, .role-form textarea,
+.mmd-code, .portal-url {
+  background: var(--bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: var(--radius-p);
+  outline: none;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease;
+}
+.campo:focus,
+.dialog-field input:focus,
+.role-form input:focus, .role-form textarea:focus,
+.mmd-code:focus, .portal-url:focus {
+  border-color: var(--marca);
+  box-shadow: 0 0 0 3px var(--foco);
+}
+.campo::placeholder,
+.dialog-field input::placeholder,
+.role-form input::placeholder, .role-form textarea::placeholder,
+.mmd-code::placeholder, .portal-url::placeholder {
+  color: var(--muted); opacity: 0.75;
+}
+
+/* caixa de marcar: a nativa vem azul-do-sistema em qualquer tema */
+input[type="checkbox"] { accent-color: var(--marca); }
 
 /* ---- palco (canvas) + Dynamic Island ------------------------- */
 
@@ -457,6 +520,31 @@ select:focus-visible, [tabindex]:focus-visible {
 }
 .note-node .react-flow__handle { background: var(--score); }
 
+/* modo da nota: é um botão, não um rótulo. "tarefa" acende porque muda o que o
+   agente faz com o texto — não é decoração, é estado com consequência. */
+.note-modo {
+  font: 500 11px var(--sans); letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--muted); background: transparent;
+  border: 1px solid var(--border); border-radius: 999px;
+  padding: 3px 9px; cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.note-modo:hover { color: var(--text); border-color: var(--accent-dim); }
+.note-modo.is-tarefa {
+  color: var(--marca); border-color: color-mix(in srgb, var(--marca) 45%, transparent);
+  background: color-mix(in srgb, var(--marca) 14%, transparent);
+}
+
+/* Ponta da aresta. O React Flow escreve a cor em style INLINE e a <marker> vive
+   uma só no <defs> servindo todas as arestas — daí o !important, e daí a ponta
+   não poder acompanhar o estado por aresta. Divisão: a ponta mostra DIREÇÃO, o
+   cabo mostra estado (tracejado que anda quando passa dado). Cor mais clara que
+   --wire de propósito: cabo em repouso é pra quase desaparecer, seta não. */
+.react-flow__arrowhead .arrowclosed {
+  fill: var(--accent-dim) !important;
+  stroke: var(--accent-dim) !important;
+}
+
 .note-area {
   flex: 1; min-height: 0; resize: none;
   background: transparent; border: none; outline: none;
@@ -495,12 +583,17 @@ select:focus-visible, [tabindex]:focus-visible {
   border-radius: var(--radius); box-shadow: var(--sombra-modal);
   overflow: hidden;
 }
+/* busca da paleta: sem moldura de propósito (o campo É o modal), então o
+   chassi de campo não se aplica aqui — só o filete de baixo, que acende no
+   azul da marca pra dizer onde o teclado está. */
 .batuta-input {
   width: 100%; box-sizing: border-box; border: 0; outline: 0;
   background: transparent; color: var(--text);
   font: 14px var(--sans); padding: 14px 16px;
   border-bottom: 1px solid var(--border-soft);
+  transition: border-color 0.16s ease;
 }
+.batuta-input:focus { border-bottom-color: var(--marca); }
 .batuta-input::placeholder { font: 400 14px var(--sans); color: var(--muted); opacity: 0.8; }
 .batuta-list { max-height: 52vh; overflow: auto; padding: 6px; }
 .batuta-item {
@@ -514,15 +607,6 @@ select:focus-visible, [tabindex]:focus-visible {
 .batuta-item .ctx-ico svg { width: 15px; height: 15px; }
 .batuta-lbl { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .batuta-group { color: var(--muted); font-size: 11px; flex: 0 0 auto; max-width: 42%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-/* ---- selects da barra ------------------------------------------- */
-
-.topbar .picker {
-  background: var(--bg); color: var(--text);
-  border: 1px solid var(--border); border-radius: var(--radius);
-  padding: 6px 8px; font: 12px var(--sans); cursor: pointer; outline: none;
-}
-.topbar .picker:hover { border-color: var(--accent-dim); }
 
 /* ---- diagrama (mermaid) -----------------------------------------
    Mesmo chassi da nota — é irmão dela: nó de texto que o agente escreve.
@@ -573,19 +657,12 @@ select:focus-visible, [tabindex]:focus-visible {
   display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
   gap: 12px; height: 58vh;
 }
-.mmd-code {
-  background: var(--bg); color: var(--text);
-  border: 1px solid var(--border); border-radius: 4px;
-  padding: 10px 12px; font: 12px/1.6 var(--mono);
-  outline: none; resize: none;
-}
-.mmd-code::placeholder { color: var(--muted); }
-.mmd-code:focus { border-color: var(--accent-dim); }
+.mmd-code { padding: 10px 12px; font: 12px/1.6 var(--mono); resize: none; }
 .mmd-preview {
   display: flex; align-items: center; justify-content: center;
   overflow: auto;
-  background: var(--note-bg); border: 1px solid var(--border); border-radius: 4px;
-  padding: 12px;
+  background: var(--note-bg); border: 1px solid var(--border);
+  border-radius: var(--radius-p); padding: 12px;
 }
 .mmd-erro-linha { white-space: pre-wrap; font: 11px/1.5 var(--mono); margin-top: 10px; }
 .mmd-doc { flex: 1; font: 11px var(--mono); color: var(--muted); align-self: center; }
@@ -612,11 +689,13 @@ select:focus-visible, [tabindex]:focus-visible {
   letter-spacing: 0.18em; text-transform: uppercase;
   padding: 0 5px; flex: none; user-select: none;
 }
+/* mora no header do nó, não num modal: raio menor e halo de foco mais
+   apertado, senão o anel encosta na borda do nó */
 .portal-url {
-  flex: 1; min-width: 0; background: var(--bg); color: var(--text);
-  border: 1px solid var(--border); border-radius: 4px;
-  padding: 4px 8px; font: 12px var(--mono); outline: none;
+  flex: 1; min-width: 0;
+  border-radius: 6px; padding: 4px 8px; font: 12px var(--mono);
 }
+.portal-url:focus { box-shadow: 0 0 0 2px var(--foco); }
 .portal-frame { flex: 1; min-height: 0; border: none; background: #fff; }
 .portal-empty { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--muted); }
 
@@ -657,23 +736,30 @@ select:focus-visible, [tabindex]:focus-visible {
 }
 .role-new:hover { border-color: var(--accent-dim); color: var(--text); }
 .role-form { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
-/* o corpo do papel é markdown com {{var}} — editor, não formulário: mono */
+/* o corpo do papel é markdown com {{var}} — editor, não formulário: mono.
+   Chassi (borda/raio/foco) vem do bloco de campos lá em cima. */
 .role-form input, .role-form textarea {
-  background: var(--bg); color: var(--text);
-  border: 1px solid var(--border); border-radius: 4px;
-  padding: 6px 8px; font: 12px var(--mono); outline: none; resize: vertical;
+  padding: 7px 9px; font: 12px var(--mono); resize: vertical;
 }
 .role-form-actions { display: flex; justify-content: flex-end; gap: 6px; }
 .modal button, .role-actions button {
   background: transparent; border: 1px solid var(--border); color: var(--text);
-  border-radius: 4px; padding: 5px 10px; cursor: pointer; font: 12px var(--sans);
+  border-radius: 6px; padding: 6px 12px; cursor: pointer; font: 12px var(--sans);
+  transition: border-color 0.16s ease, background 0.16s ease, color 0.16s ease;
 }
-.modal .btn-claude { border-color: var(--accent-dim); color: var(--accent); }
-.modal button:hover { border-color: var(--accent-dim); }
+/* ação principal: preenchida, não só com a borda um tom mais clara. Era o
+   único jeito de saber qual botão é o "ok" — e não era jeito nenhum. */
+.modal .btn-claude {
+  border-color: var(--marca);
+  background: color-mix(in srgb, var(--marca) 14%, transparent);
+  color: var(--text);
+}
+.modal .btn-claude:hover { background: color-mix(in srgb, var(--marca) 24%, transparent); }
+.modal button:hover { border-color: var(--accent-dim); background: var(--panel-2); }
 .modal .btn-danger { border-color: var(--exited); color: var(--exited); }
 
 /* ---- boas-vindas (primeiro uso) --------------------------------- */
-.wc { width: 520px; }
+.wc { width: 560px; max-width: calc(100vw - 48px); }
 .wc-hero { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
 .wc-mark { font: 600 11px var(--sans); letter-spacing: 0.16em; color: var(--muted); text-transform: uppercase; }
 .wc-mark i { color: var(--marca); font-style: normal; }
@@ -700,6 +786,82 @@ select:focus-visible, [tabindex]:focus-visible {
 }
 .wc-note { color: var(--muted); font-size: 11px; line-height: 1.5; margin: 12px 0 4px; }
 
+/* corpo rolável: o passo mais longo não pode empurrar os botões pra fora da
+   tela em notebook de 768px de altura.
+   Altura FIXA, não min/max: com altura variável a caixa saltava 160px entre o
+   passo 2 e o 3 e o botão "próximo" fugia de debaixo do cursor. Sobra branco
+   no passo curto — troca barata por um alvo de clique que fica parado. */
+.wc-corpo {
+  overflow-y: auto; overscroll-behavior: contain;
+  height: min(58vh, 460px);
+  margin-right: -6px; padding-right: 6px; /* espaço da barra sem cortar texto */
+}
+.wc-corpo .dialog-msg { margin-bottom: 10px; }
+
+/* faixas do mapa da ilha: grupo de ícones + o que ele faz */
+.wc-mapa { display: flex; flex-direction: column; margin-top: 4px; }
+.wc-grupo {
+  display: flex; gap: 10px; align-items: flex-start;
+  padding: 9px 0; border-top: 1px solid var(--border-soft);
+}
+/* largura fixa (5 ícones de 15px + 4 vãos de 4px): sem isso a coluna encolhe
+   nos grupos de 1 ícone e os títulos de cada faixa saem desalinhados */
+.wc-grupo-ico {
+  flex: none; width: 91px;
+  display: inline-flex; gap: 4px; align-items: center;
+  margin-top: 2px; color: var(--accent);
+}
+.wc-grupo-ico svg { width: 15px; height: 15px; flex: none; }
+.wc-grupo .wc-item-body i { color: var(--text); font-style: italic; }
+
+/* tabela de rotas: endereço à esquerda, efeito à direita. Grid (e não flex por
+   linha) pra todos os `⇢nome:` alinharem na mesma coluna. */
+.wc-rotas {
+  display: grid; grid-template-columns: max-content 1fr;
+  gap: 7px 12px; align-items: center;
+  margin: 10px 0 4px; padding: 12px;
+  background: var(--bg); border: 1px solid var(--border-soft); border-radius: 6px;
+}
+.wc-rotas > div { display: contents; }
+.wc-rotas code { justify-self: start; white-space: nowrap; user-select: text; }
+.wc-rotas span { color: var(--muted); font-size: 12px; line-height: 1.4; }
+
+/* código NO MEIO de uma frase: o estilo de `.wc code` é pra comando de copiar
+   e colar (padding 4/7 + borda) — dentro de prosa ele infla a entrelinha e
+   força quebra. Aqui vale a versão leve. */
+.wc-corpo p code, .wc-grupo code {
+  padding: 1px 5px; font-size: 11.5px; border-radius: 4px;
+  word-break: normal; user-select: text;
+}
+.wc kbd {
+  font: 11px var(--mono); color: var(--text);
+  background: var(--panel-2); border: 1px solid var(--border);
+  border-bottom-width: 2px; border-radius: 4px; padding: 1px 5px;
+  white-space: nowrap;
+}
+/* "rechecar" no meio de um parágrafo: botão de verdade (foco/teclado), com
+   cara de link — um <button> com moldura ali cortaria a frase em dois */
+.wc-link {
+  background: none; border: none; padding: 0; font: inherit;
+  color: var(--accent); text-decoration: underline; cursor: pointer;
+}
+.wc-link:hover { color: var(--text); }
+
+.wc-rodape {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; margin-top: 14px; padding-top: 12px;
+  border-top: 1px solid var(--border-soft);
+}
+.wc-pontos { display: inline-flex; gap: 6px; }
+.wc-ponto {
+  width: 7px; height: 7px; padding: 0; border-radius: 50%;
+  background: var(--border); border: none; cursor: pointer;
+  transition: background 0.18s, width 0.24s;
+}
+.wc-ponto.on { background: var(--accent); width: 18px; border-radius: 999px; }
+.wc-ponto:hover { background: var(--muted); }
+.wc-ponto.on:hover { background: var(--accent); }
+
 /* ---- dialog (prompt/confirm custom) ----------------------------- */
 
 .dialog { width: 400px; }
@@ -713,13 +875,8 @@ select:focus-visible, [tabindex]:focus-visible {
   font: 600 10px var(--sans); text-transform: uppercase;
   letter-spacing: 0.18em; color: var(--muted);
 }
-.dialog-field input {
-  background: var(--bg); color: var(--text);
-  border: 1px solid var(--border); border-radius: var(--radius);
-  /* quase sempre um rótulo de rota ou slug de branch: mono */
-  padding: 8px 10px; font: 13px var(--mono); outline: none;
-}
-.dialog-field input:focus { border-color: var(--accent-dim); }
+/* quase sempre um rótulo de rota ou slug de branch: mono */
+.dialog-field input { padding: 8px 10px; font: 13px var(--mono); }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
 
 /* ---- movimento -------------------------------------------------- */
@@ -730,20 +887,30 @@ select:focus-visible, [tabindex]:focus-visible {
 }
 @media (prefers-reduced-motion: reduce) {
   .agent-node, .note-node, .mmd-node, .portal-node { animation: none; }
-  .topbar button { transition: none; }
 }
 
 /* ---- cursor custom (estilo macOS) — no fim pra vencer os cursor: pointer
-   espalhados. Hotspots: seta = ponta (8,3); mão = indicador (15,4).
-   Texto (I-beam) e grab/grabbing ficam nativos. */
-html, body { cursor: var(--cursor-arrow), default; }
+   espalhados. Texto (I-beam) e grab/grabbing ficam nativos.
+
+   Duas linhas por regra, de propósito: a primeira é reserva pra motor sem
+   `image-set`, a segunda serve o @2x. Cursor é bitmap e não tem srcset —
+   sem a versão de 64px o SO escalava o PNG de 32 em tela HiDPI, que era
+   metade do motivo de ele parecer borrado. Se `image-set` não existir, a
+   declaração cai no parse e a de cima continua valendo.
+
+   Hotspots medidos no PNG, não estimados: ponta da seta em (1,1), ponta do
+   indicador em (9,1). */
+html, body, .react-flow__pane {
+  cursor: url("/cursors/arrow.png") 1 1, default;
+  cursor: image-set(url("/cursors/arrow.png") 1x, url("/cursors/arrow@2x.png") 2x) 1 1, default;
+}
 button, select, a, label,
 .ctx-item, .agent-btn, .ib, .ib-ws,
 .role-new, .role-row button, .modal button,
 .zoom-pct, .react-flow__handle {
-  cursor: var(--cursor-pointer), pointer;
+  cursor: url("/cursors/pointer.png") 9 1, pointer;
+  cursor: image-set(url("/cursors/pointer.png") 1x, url("/cursors/pointer@2x.png") 2x) 9 1, pointer;
 }
-.react-flow__pane { cursor: var(--cursor-arrow), default; }
 
 /* ---- presets de papel -------------------------------------------- */
 .role-presets-title {

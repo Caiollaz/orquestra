@@ -1,12 +1,24 @@
 <svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
-  <!-- seta estilo macOS: preta, contorno branco, sombra leve -->
+  <!--
+    Seta estilo macOS. Mestre dos dois PNGs: `arrow.png` (32px, 1x) e
+    `arrow@2x.png` (64px, HiDPI) — regerar os DOIS ao mexer aqui.
+
+    Dimensionado pelo tamanho FINAL, não pela caixa: o desenho ocupa
+    21x35 unidades de um viewBox de 64, o que dá ~11x18px no PNG de 32 —
+    a faixa dos cursores nativos (macOS ~12x19, Windows ~11x18). A versão
+    anterior ocupava 32x48 → 16x24px, e era por isso que parecia grande.
+
+    Keyline de 2.4 unidades = ~1px no render 1x. A anterior usava 4 (2px),
+    que no downsample virava halo cinza em vez de contorno.
+    Ponta em (4,2) → hotspot "2 1" no PNG de 32.
+  -->
   <defs>
     <filter id="sh" x="-40%" y="-40%" width="200%" height="200%">
-      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000" flood-opacity="0.35"/>
+      <!-- sombra curta: a de stdDeviation 2 borrava mais do que separava -->
+      <feDropShadow dx="0" dy="1" stdDeviation="1" flood-color="#000" flood-opacity="0.3"/>
     </filter>
   </defs>
   <path filter="url(#sh)"
-    d="M16 6 L16 50 L26.5 39.5 L33 54 L40.5 50.5 L34 36.5 L48 36.5 Z"
-    fill="#161616" stroke="#ffffff" stroke-width="4" stroke-linejoin="round"/>
-  <path d="M16 6 L16 50 L26.5 39.5 L33 54 L40.5 50.5 L34 36.5 L48 36.5 Z" fill="#161616"/>
+    d="M4 2 L4 33 L11.5 25.8 L16.8 37.4 L21.6 35.2 L16.5 24 L25 24 Z"
+    fill="#161616" stroke="#ffffff" stroke-width="2.4" stroke-linejoin="round"/>
 </svg>

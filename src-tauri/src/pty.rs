@@ -203,14 +203,58 @@ pub fn prewarm_path() {
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Prereqs {
+    /// binário `claude` no PATH
     claude: bool,
     node: bool,
     git: bool,
+    /// `npx` disponível: dá pra rodar claude/codex/gemini sem instalar nada
+    npx: bool,
 }
 
 /// Resolvido = achou o arquivo (resolve_program devolve caminho ≠ nome cru).
 fn on_path(name: &str, path: &str) -> bool {
     resolve_program(name, path) != name
+}
+
+/// CLIs de agente que também são pacote npm. Sem o binário no PATH, o app roda
+/// `npx -y <pacote>` — quem tem node não precisa instalar nada global (e nunca
+/// fica com uma versão velha esquecida). Nome do binário → pacote.
+/// `agy` (antigravity) fica de fora: não é publicado no npm.
+const PACOTE_NPM: &[(&str, &str)] = &[
+    ("claude", "@anthropic-ai/claude-code"),
+    ("codex", "@openai/codex"),
+    ("gemini", "@google/gemini-cli"),
+    ("opencode", "opencode-ai"),
+];
+
+pub(crate) fn pacote_npm(nome: &str) -> Option<&'static str> {
+    PACOTE_NPM.iter().find(|(n, _)| *n == nome).map(|(_, p)| *p)
+}
+
+/// Como invocar um agente: `(programa, args que vêm antes dos do usuário)`.
+///
+/// Ordem de preferência — binário no PATH primeiro. Ele é mais rápido (npx
+/// bate no registro a cada boot) e é a versão que o usuário escolheu instalar;
+/// o npx é a rede de segurança pra quem só tem node.
+pub(crate) fn invocacao(nome: &str, path: &str) -> (String, Vec<String>) {
+    let prog = resolve_program(nome, path);
+    if prog != nome {
+        return (prog, vec![]);
+    }
+    // sem binário: tenta o pacote npm equivalente
+    match pacote_npm(nome) {
+        Some(pacote) => {
+            let npx = resolve_program("npx", path);
+            if npx == "npx" {
+                // nem npx: devolve o nome cru e deixa o spawn falhar com o
+                // erro de sempre ("os error 2") — mentir aqui só adia
+                (prog, vec![])
+            } else {
+                (npx, vec!["-y".to_string(), pacote.to_string()])
+            }
+        }
+        None => (prog, vec![]),
+    }
 }
 
 #[tauri::command]
@@ -220,6 +264,7 @@ pub fn check_prereqs() -> Prereqs {
         claude: on_path("claude", &path),
         node: on_path("node", &path),
         git: on_path("git", &path),
+        npx: on_path("npx", &path),
     }
 }
 
@@ -369,8 +414,16 @@ fn command_for(program: String, args: &[String]) -> CommandBuilder {
 fn build_command(cmd: &AgentCmd, cwd: &str) -> CommandBuilder {
     let path = augmented_path();
     let mut b = match cmd {
-        AgentCmd::Claude { extra_args } => command_for(resolve_program("claude", &path), extra_args),
-        AgentCmd::Agent { program, extra_args } => command_for(resolve_program(program, &path), extra_args),
+        AgentCmd::Claude { extra_args } => {
+            let (prog, mut args) = invocacao("claude", &path);
+            args.extend(extra_args.iter().cloned());
+            command_for(prog, &args)
+        }
+        AgentCmd::Agent { program, extra_args } => {
+            let (prog, mut args) = invocacao(program, &path);
+            args.extend(extra_args.iter().cloned());
+            command_for(prog, &args)
+        }
         AgentCmd::Shell { program } => {
             let sh = program.clone().unwrap_or_else(default_shell);
             command_for(resolve_program(&sh, &path), &[])
@@ -561,6 +614,43 @@ mod tests {
         assert!(sh.starts_with('/') && std::path::Path::new(&sh).is_file(), "resolveu: {sh}");
         // nome inexistente cai de volta pro próprio nome (erro aparece no spawn/terminal)
         assert_eq!(resolve_program("binario-que-nao-existe-xyz", &augmented_path()), "binario-que-nao-existe-xyz");
+    }
+
+    #[test]
+    fn npx_quando_nao_ha_binario() {
+        // PATH de mentira com um "npx" dentro: o binário do agente não existe
+        // lá, então a invocação tem de cair pro pacote npm.
+        let tmp = std::env::temp_dir().join(format!("orq-npx-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&tmp).unwrap();
+        for nome in ["npx", "npx.cmd"] {
+            std::fs::write(tmp.join(nome), b"").unwrap();
+        }
+        let path = tmp.to_string_lossy().into_owned();
+
+        let (prog, args) = invocacao("claude", &path);
+        assert!(prog.contains("npx"), "programa: {prog}");
+        assert_eq!(args, vec!["-y".to_string(), "@anthropic-ai/claude-code".to_string()]);
+
+        // agy não é pacote npm: sem npx pra salvar, volta o nome cru e o spawn
+        // falha com o erro de sempre
+        assert_eq!(invocacao("agy", &path), ("agy".to_string(), vec![]));
+
+        // sem npx no PATH também não inventa nada
+        assert_eq!(invocacao("claude", ""), ("claude".to_string(), vec![]));
+
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn binario_no_path_ganha_do_npx() {
+        // com o binário instalado, npx nem entra na conta: é mais rápido e é a
+        // versão que o usuário escolheu
+        let path = augmented_path();
+        let (prog, args) = invocacao("sh", &path);
+        assert!(std::path::Path::new(&prog).is_file(), "resolveu: {prog}");
+        assert!(args.is_empty());
+        assert_eq!(pacote_npm("gemini"), Some("@google/gemini-cli"));
+        assert_eq!(pacote_npm("agy"), None);
     }
 
     #[test]

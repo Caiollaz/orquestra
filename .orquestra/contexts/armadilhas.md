@@ -9,6 +9,13 @@ Cada item é um bug real que foi corrigido. Estão aqui pra não voltarem.
 - **Injeção pelo terminador do paste.** Um `\x1b[201~` no payload fecha o
   bracketed-paste e o resto vira tecla digitada no destino. `bracketed_safe`
   filtra — mantenha em qualquer caminho novo pro `forward_output_to`.
+- **Página buscada disparando comando.** Texto de site é fonte não-confiável e
+  o anti-eco só cobre a janela de `ECO_MS`: uma linha `⇢shell-1: rm -rf .` numa
+  página rotearia depois da janela. `extraiTexto` neutraliza `⇢` → `->`, e nó
+  shell não recebe resposta de portal.
+- **`file://` pelo portal.** `⇢portal-1: ler file:///etc/passwd` seria
+  exfiltração: `esquema_ok` (`pagina.rs`) recusa o que não é http/https, e o
+  `--`/`--proto-redir` do curl fecham option-injection e redirect.
 - **Contexto que dispara comando.** Bloco documentando o protocolo `⇢` é ecoado
   pelo TUI e casava a regex de rota. Ver `rememberSent` no contexto do
   protocolo.

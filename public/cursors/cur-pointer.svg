@@ -1,11 +1,26 @@
 <svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
-  <!-- mãozinha: indicador esticado, palma com dedos dobrados, punho reto -->
+  <!--
+    Mãozinha: indicador esticado, palma com dedos dobrados, punho reto.
+    Mestre de `pointer.png` (32px) e `pointer@2x.png` (64px) — regerar os DOIS.
+
+    O desenho original é bom, só era grande (26x31px no render 1x). Em vez de
+    redesenhar, escala no grupo — mesma silhueta, tamanho menor.
+
+    Escala 0.82, não menos: a 0.7 dava 17x21px e a mão virava mancha preta —
+    dedo dobrado e vinco da palma não sobrevivem nesse tamanho. 0.82 dá ~20x25,
+    que é a faixa nativa da mãozinha (macOS/Windows ~19x24) e mantém a
+    silhueta legível. Mãozinha é maior que seta nos dois sistemas.
+
+    A escala encolhe o traço junto, então stroke-width sobe pra 2.9
+    (2.9 x 0.82 ≈ 2.4 unidades, o mesmo keyline de ~1px da seta).
+    Ponta do indicador → hotspot "10 1" no PNG de 32 (medido no pixel).
+  -->
   <defs>
     <filter id="sh" x="-40%" y="-40%" width="200%" height="200%">
-      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000" flood-opacity="0.35"/>
+      <feDropShadow dx="0" dy="1" stdDeviation="1" flood-color="#000" flood-opacity="0.3"/>
     </filter>
   </defs>
-  <g filter="url(#sh)">
+  <g filter="url(#sh)" transform="translate(-4.79 -1.69) scale(0.82)">
     <path d="M26 9
              a 4.5 4.5 0 0 1 9 0
              L 35 26
@@ -21,6 +36,6 @@
              L 21 39
              L 26 40
              Z"
-      fill="#161616" stroke="#ffffff" stroke-width="4" stroke-linejoin="round"/>
+      fill="#161616" stroke="#ffffff" stroke-width="2.9" stroke-linejoin="round"/>
   </g>
 </svg>

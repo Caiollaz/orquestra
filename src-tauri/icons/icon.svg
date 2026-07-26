@@ -1,64 +1,37 @@
 <svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
   <!--
-    orquestra — ícone.
-    Conceito: o fosso de orquestra visto de cima = um grafo de agentes.
-    Quatro nós em arco (os naipes: cordas, latão, madeiras, percussão —
-    as mesmas cores dos nós no app) ligados por cabos tracejados a um
-    nó-maestro central (anel de latão, como o ícone de "papel" ◎ do app).
-    Fundo: palco apagado com luz quente subindo do fosso.
+    orquestra — ícone do app. Mestre de todos os tamanhos:
+    `pnpm tauri icon src-tauri/icons/icon.svg` regenera png/ico/icns/android/ios.
+    Mantenha em sincronia com a marca da landing (site/index.html) e do titlebar.
+
+    Sinal "oq": dois anéis que se cruzam mais a haste do q — as duas primeiras
+    letras e, ao mesmo tempo, dois nós ligados, que é o produto.
+
+    Escolhas ditadas pelo tamanho de 32px (barra de tarefas, aba, dock):
+    - traço grosso (72 num anel de raio 180, 40% do raio). Traço fino some.
+    - os anéis se cruzam em 20% do diâmetro externo, a mesma proporção da marca
+      na landing. Com mais que isso os dois viram uma bolha só no tamanho
+      pequeno — testado em 32px, foi preciso afastar.
+    - sem gradiente no sinal, sem sombra, sem brilho: no ícone pequeno tudo isso
+      vira sujeira cinza. O único gradiente é o do fundo, e é sutil.
+    - margem de ~12% igual nos quatro lados.
   -->
   <defs>
-    <!-- luz do fosso: brilho quente atrás do maestro -->
-    <radialGradient id="pit" cx="50%" cy="66%" r="72%">
-      <stop offset="0%" stop-color="#1a1a20"/>
-      <stop offset="45%" stop-color="#111114"/>
-      <stop offset="100%" stop-color="#09090b"/>
-    </radialGradient>
-    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
-      <stop offset="0%" stop-color="#58a6ff" stop-opacity="0.55"/>
-      <stop offset="100%" stop-color="#58a6ff" stop-opacity="0"/>
-    </radialGradient>
-    <filter id="soft" x="-60%" y="-60%" width="220%" height="220%">
-      <feGaussianBlur stdDeviation="10"/>
-    </filter>
+    <linearGradient id="fundo" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#17171d"/>
+      <stop offset="1" stop-color="#050507"/>
+    </linearGradient>
   </defs>
 
-  <!-- fundo squircle -->
-  <rect x="0" y="0" width="1024" height="1024" rx="232" fill="url(#pit)"/>
-  <rect x="10" y="10" width="1004" height="1004" rx="224" fill="none" stroke="#58a6ff" stroke-opacity="0.14" stroke-width="4"/>
+  <!-- squircle: mesmo raio proporcional do ícone de app de macOS/Windows 11 -->
+  <rect width="1024" height="1024" rx="232" fill="url(#fundo)"/>
+  <!-- fio de luz na borda: separa o ícone de um dock escuro sem inventar cor -->
+  <rect x="3" y="3" width="1018" height="1018" rx="229" fill="none"
+        stroke="#ffffff" stroke-opacity="0.09" stroke-width="6"/>
 
-  <!-- fileiras do fosso: arcos sutis atrás dos nós -->
-  <g fill="none" stroke="#58a6ff" stroke-opacity="0.10" stroke-width="6">
-    <path d="M 200 560 A 380 380 0 0 1 824 560"/>
-    <path d="M 262 626 A 300 300 0 0 1 762 626"/>
+  <g fill="none" stroke="#ffffff" stroke-width="72" stroke-linecap="round">
+    <circle cx="339" cy="464" r="180"/>
+    <circle cx="685" cy="464" r="180"/>
+    <path d="M865 464v276"/>
   </g>
-
-  <!-- brilho no chão sob o maestro -->
-  <ellipse cx="512" cy="712" rx="300" ry="180" fill="url(#glow)" opacity="0.5"/>
-
-  <!-- cabos: maestro → naipes (tracejado igual às arestas do canvas) -->
-  <g fill="none" stroke="#58a6ff" stroke-width="16" stroke-linecap="round"
-     stroke-dasharray="40 30" stroke-opacity="0.62">
-    <path d="M 408 606 Q 290 556 232 452"/>
-    <path d="M 472 570 Q 430 460 402 342"/>
-    <path d="M 552 570 Q 594 460 622 342"/>
-    <path d="M 616 606 Q 734 556 792 452"/>
-  </g>
-
-  <!-- naipes: cordas, latão, madeiras, percussão -->
-  <g>
-    <circle cx="216" cy="408" r="66" fill="#3fb950"/>
-    <circle cx="216" cy="408" r="66" fill="#3fb950" filter="url(#soft)" opacity="0.5"/>
-    <circle cx="394" cy="292" r="66" fill="#58a6ff"/>
-    <circle cx="394" cy="292" r="66" fill="#58a6ff" filter="url(#soft)" opacity="0.5"/>
-    <circle cx="630" cy="292" r="66" fill="#e3b341"/>
-    <circle cx="630" cy="292" r="66" fill="#e3b341" filter="url(#soft)" opacity="0.5"/>
-    <circle cx="808" cy="408" r="66" fill="#db6e8c"/>
-    <circle cx="808" cy="408" r="66" fill="#db6e8c" filter="url(#soft)" opacity="0.5"/>
-  </g>
-
-  <!-- maestro: anel de latão (a "estante" central que rege os naipes) -->
-  <circle cx="512" cy="712" r="112" fill="none" stroke="#58a6ff" stroke-width="34"/>
-  <circle cx="512" cy="712" r="112" fill="none" stroke="#58a6ff" stroke-width="34" filter="url(#soft)" opacity="0.55"/>
-  <circle cx="512" cy="712" r="34" fill="#ededf0"/>
 </svg>

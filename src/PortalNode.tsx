@@ -1,4 +1,4 @@
-import { memo, useState } from "react";
+import { memo, useEffect, useState } from "react";
 import { NodeResizer, Handle, Position, type NodeProps } from "@xyflow/react";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { ni } from "./node-icons";
@@ -11,13 +11,24 @@ export type PortalNodeData = {
 };
 
 // Portal = janela de navegador embutida no canvas (MVP: <iframe>).
+//
+// O agente LÊ a página via ⇢portal-1: ler — mas a leitura NÃO passa por aqui: o
+// iframe é same-origin e ilegível de dentro do app, então quem busca é o
+// fetch_page (curl no Rust). Consequência prática: o que o agente lê pode
+// divergir do que você vê na tela, porque são duas requisições diferentes, sem
+// cookie nem sessão em comum.
+//
 // ponytail: iframe é o mínimo que roda hoje. Muitos sites mandam
-// X-Frame-Options/CSP e recusam ser embutidos; e o agente ainda não pilota a
-// página (clicar/digitar/screenshot). Upgrade real = webview nativa do Tauri +
-// ponte com o agente conectado (source handle já exposto pra essa ligação futura).
+// X-Frame-Options/CSP e recusam ser embutidos (daí o botão de janela nativa), e
+// o agente não PILOTA a página (clicar/digitar/screenshot). Upgrade real =
+// webview nativa do Tauri + ponte com o agente conectado (o source handle segue
+// reservado pra isso).
 function PortalNodeImpl({ id, data, selected }: NodeProps) {
   const d = data as PortalNodeData;
   const [draft, setDraft] = useState(d.url);
+  // o agente também navega (⇢portal-1: url) e a barra ficava mostrando o
+  // endereço velho: o rascunho precisa seguir a fonte da verdade
+  useEffect(() => setDraft(d.url), [d.url]);
   const go = () => {
     const u = draft.trim();
     d.onUrl(id, /^https?:\/\//.test(u) ? u : `https://${u}`);

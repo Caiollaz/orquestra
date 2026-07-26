@@ -22,10 +22,66 @@ conexão diz ao agente qual ele pegou:
 | Destino | `⇢NOME: x` faz |
 |---|---|
 | `agent` (claude/codex/…) | manda a mensagem, chega como `(de origem) x` |
-| `agent` do tipo shell | **executa** `x` naquele terminal |
-| `portal` | navega o iframe até a URL `x` |
+| `agent` do tipo shell | **executa** `x` naquele terminal **e a saída volta** pra quem pediu como `(de shell-1) \`cmd\`` + as últimas 4KB |
+| `portal` | `x` é URL → navega; `x` é `ler` (ou `ler <url>`) → **devolve o texto da página** pra quem pediu |
 | `note` | escreve `x` na nota (`⇢nota: texto`), **anexando** ao que já tem |
 | `mermaid` | **substitui** o diagrama pelo código `x` (dois diagramas concatenados não compilam) |
+
+**Shell devolve a saída.** Shell não fala `⇢`, então é o app que fecha o laço:
+ao delegar, o par (shell → quem pediu) fica registrado e no **próximo idle do
+shell** a saída nova volta pro delegante. Cauda e não cabeça — numa saída de
+comando o que importa é o final (falha, resumo). PTY não "termina", então
+ficar quieto depois de imprimir é o sinal; comando interativo que espera input
+fica quieto também e a saída volta pela metade. Sem código de saída: só o texto.
+
+**Portal é o outro destino que RESPONDE.** `⇢portal-1: ler` devolve a página no
+stdin de quem pediu, como `(de portal-1) leu <url>` + o texto. A resposta volta
+pela **mesma aresta do pedido** (não existe aresta portal→agente). Quem busca é o
+`fetch_page` (curl no Rust), não o iframe: o que o agente lê pode divergir do que
+o humano vê, porque são duas requisições sem cookie nem sessão em comum, e página
+renderizada por JS chega vazia. Teto de 12KB por entrega, com aviso de truncagem.
+
+Duas regras que **não** são negociáveis nesse caminho:
+- **`⇢` do texto buscado é neutralizado pra `->`** (`extraiTexto` em
+  `src/pagina.ts`). Página é fonte não-confiável e `rememberSent` só cobre a
+  janela de `ECO_MS`: o TUI redesenha o scrollback e a linha reaparecendo depois
+  da janela rotearia de verdade.
+- **Nó shell nunca recebe resposta.** O laço de rota roda pra todo nó de agente
+  (o `isLLM` só protege a semeadura), e colar uma página num prompt de bash é
+  execução de comando.
+
+## Nota tem modo: `contexto` ou `tarefa`
+O toggle no cabeçalho da nota decide como o texto chega no agente
+(`enquadraNota`, `src/nota.ts`) — e é **um lugar só**, usado pelos três caminhos
+(conectar, 3º idle, botão ⇢), porque antes cada um mandava num formato diferente
+e o agente respondia "OK" pra uma spec:
+
+- `contexto` → `(contexto)\n<texto>`, referência.
+- `tarefa` → `(tarefa do usuário)\n<texto>` + ordem de implementar e de perguntar
+  antes se algo estiver ambíguo.
+
+Padrão é `contexto`. Nota vazia não gera submissão, e o estágio de notas **só é
+marcado como semeado quando havia texto** — quem liga a nota vazia e escreve
+depois pega no idle seguinte. Conectar uma nota num agente que ainda não passou
+pelo estágio não injeta na hora: a semeadura pega, senão a mesma nota chegava
+duas vezes.
+
+## O prompt de protocolo lista os vizinhos
+`seedPrompt` inclui as conexões **atuais** do agente, descritas por
+`descreveDestino` (mesma fonte do aviso `(sistema)`). Sem isso, workspace
+recarregado tinha agente que sabia a sintaxe `⇢NOME:` e não sabia nome nenhum —
+o grafo existia e ele estava amnésico, porque os avisos de conexão só saem no
+`onConnect`.
+
+## Agendamento espera o agente ficar ocioso
+O relógio de `startSchedule` só **arma**; quem dispara é o idle. Antes era
+`setInterval` cego colando prompt no meio do trabalho.
+
+## Aresta é dirigida, e os dois lados são avisados
+Só `source → target` roteia. Ligar dois agentes LLM avisa **os dois**: a origem
+recebe "você pode falar com X via ⇢X:", o destino recebe "X pode te endereçar,
+responda com ⇢X:". Sem o segundo aviso, uma ligação desenhada ao contrário morria
+calada. A aresta tem ponta de seta no canvas por isso.
 
 **Diagrama é o único destino multilinha.** O `⇢` só cabe na primeira linha, então
 `blocoDaRota` (`protocolo.ts`) engole as linhas seguintes até uma linha em branco

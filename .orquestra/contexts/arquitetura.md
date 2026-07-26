@@ -37,7 +37,7 @@ chama `invoke` direto. Todo command registrado em `src-tauri/src/lib.rs`.
   `zustand` é dependência mas **não é usado**: não presuma que existe store.
 - **Canvas**: `@xyflow/react` (React Flow). 4 tipos de nó, num mapa só em
   `App.tsx`: `agent` (XtermView), `note`, `mermaid` (diagrama), `portal`
-  (iframe). As
+  (iframe pra exibir; leitura da página é o `fetch_page`/curl do `pagina.rs`, porque o iframe é same-origin). As
   **arestas são o grafo de roteamento** — nó só fala com quem está conectado.
 - **XtermView.tsx** — xterm + addon-fit, **renderer DOM** (nem canvas nem
   webgl: texto real escala nítido no zoom; o canvas addon virava bitmap
