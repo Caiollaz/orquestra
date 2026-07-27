@@ -117,9 +117,21 @@ ou até a próxima rota:
   API --> Banco
 ```
 
-As linhas de continuação passam por um stripping de **moldura** (`│ ⎿ ┃ ╎ ┆ ▌ ▏`):
-o TUI desenha borda na margem e ela vinha junto, sujando a nota e quebrando o
-mermaid. ASCII `|` fica de fora — linha de tabela markdown começa com `|`.
+As linhas de continuação passam por um stripping de **moldura nas duas pontas**
+(`semMoldura`). À esquerda `│ ⎿ ┃ ╎ ┆ ▌ ▏`: o TUI desenha borda na margem e ela
+vinha junto, sujando a nota e quebrando o mermaid. À direita, borda **e barra de
+rolagem** (`█ ▓ ▒ ░` e meios-blocos): o opencode desenha `█` na coluna da direita
+em toda linha da área de mensagens, então linha em branco chegava como
+`"          █"` — não vazia pro `.trim()` — e o bloco não parava nela, engolindo
+a tela até a barra de status. Sintoma: pedir uma nota e receber o texto mais o
+nome do modelo e "barras pretas". A `msg` da própria rota também passa pelo
+strip: a ponta direita ficava colada no fim do texto.
+
+ASCII `|` fica de fora **das duas pontas** — linha de tabela markdown começa e
+termina com `|`.
+
+Fecha o bloco: linha que sobra vazia depois do strip, **régua/base de caixa**
+(só box-drawing; `---` de markdown é ASCII e continua conteúdo), ou próxima rota.
 
 Teto conhecido: um bloco partido entre duas leituras do buffer do xterm chega
 pela metade.

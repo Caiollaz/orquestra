@@ -12,6 +12,10 @@ export const islandNotify = (a: IslandActivity) =>
   window.dispatchEvent(new CustomEvent<IslandActivity>("island-activity", { detail: a }));
 
 const ACTIVITY_MS = 2200;
+// Saída própria da atividade. Sem ela o texto sumia de um frame pro outro
+// enquanto a largura ainda voltava com mola: a pastilha "piscava" no fim.
+// Curta de propósito — é despedida, não evento.
+const SAIDA_MS = 180;
 
 // pinned = tem dropdown aberto ancorado num botão daqui. Enquanto estiver, a
 // barra não recolhe e nem cede o palco pra uma atividade: o menu vive FORA da
@@ -20,6 +24,7 @@ const ACTIVITY_MS = 2200;
 export function Island({ pill, children, pinned = false }: { pill: ReactNode; children: ReactNode; pinned?: boolean }) {
   const [open, setOpen] = useState(false);
   const [activity, setActivity] = useState<IslandActivity | null>(null);
+  const [saindo, setSaindo] = useState(false);
   const shellRef = useRef<HTMLDivElement>(null);
   const queue = useRef<IslandActivity[]>([]);
   const showing = useRef(false);
@@ -31,10 +36,19 @@ export function Island({ pill, children, pinned = false }: { pill: ReactNode; ch
     const next = () => {
       const a = queue.current.shift();
       if (!a) {
-        showing.current = false;
-        setActivity(null);
+        // fila vazia: a última atividade sai animando antes de ceder o palco.
+        // `showing` continua true durante a saída — quem chegar nesse meio tempo
+        // entra na fila e é retomado no fim, senão a mensagem era descartada.
+        setSaindo(true);
+        window.setTimeout(() => {
+          setSaindo(false);
+          if (queue.current.length) return next();
+          showing.current = false;
+          setActivity(null);
+        }, SAIDA_MS);
         return;
       }
+      setSaindo(false);
       showing.current = true;
       setActivity(a);
       window.setTimeout(next, ACTIVITY_MS);
@@ -90,17 +104,21 @@ export function Island({ pill, children, pinned = false }: { pill: ReactNode; ch
     return () => clearTimeout(leaveTimer.current);
   }, [pinned]);
 
+  // O tom vai na CASCA, não no filho: custom property só herda pra BAIXO, então
+  // `.island` nunca enxergava o `--act` declarado em `.island-act` — a borda de
+  // atividade caía sempre no accent, fosse verde, azul ou vermelho o aviso.
+  const tom = state === "activity" && activity ? ` tone-${activity.tone ?? "flow"}` : "";
+
   return (
     <div
       ref={shellRef}
-      className={`island is-${state}`}
+      className={`island is-${state}${tom}`}
       onMouseEnter={enter}
       onMouseLeave={leave}
       onClick={() => { if (state === "pill") enter(); }}
     >
       {state === "activity" && activity ? (
-        <div className={`island-swap island-act tone-${activity.tone ?? "flow"}`} key={`a-${activity.text}`}>
-          <span className="island-act-dot" />
+        <div className={`island-swap island-act${saindo ? " is-out" : ""}`} key={`a-${activity.text}`}>
           <span className="island-act-text">{activity.text}</span>
         </div>
       ) : state === "open" ? (

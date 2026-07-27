@@ -225,11 +225,45 @@ input[type="checkbox"] { accent-color: var(--marca); }
   backdrop-filter: blur(14px);
   animation: island-in 0.22s ease-out;
   overflow: hidden; white-space: nowrap;
-  transition: border-color 0.25s, box-shadow 0.25s;
+  transition: background 0.25s, box-shadow 0.25s;
 }
 .island.is-pill { cursor: pointer; }
 .island.is-open { box-shadow: var(--sombra-modal); }
-.island.is-activity { border-color: color-mix(in srgb, var(--act, var(--accent)) 45%, var(--border)); }
+
+/* tom da atividade na casca: o ponto e o brilho leem a mesma variável */
+.island.tone-flow { --act: #007aff; }
+.island.tone-ok { --act: #3fb950; }
+.island.tone-bad { --act: #f0616a; }
+
+/* Atividade não desenha anel nem ponto: a pastilha INTEIRA é o indicador, e ela
+   pulsa. Um hairline colorido no fio de 1px de uma pastilha translúcida com blur
+   fica sujo (e `--act` era declarado no filho, então a borda pegava sempre o
+   accent, nunca o tom). O ponto virou redundância depois disso — a cor já está
+   no corpo. Sobra lavagem no fundo + brilho ambiente respirando: lê como luz
+   vazando da pastilha, e some sozinho quando o estado sai.
+   Declarações estáticas ficam fora do @keyframes de propósito: com
+   prefers-reduced-motion a animação morre e o realce permanece. */
+.island.is-activity {
+  background: color-mix(in srgb, var(--act) 7%, color-mix(in srgb, var(--panel) 90%, transparent));
+  box-shadow:
+    var(--sombra-flutuante),
+    0 calc(5px * var(--s)) calc(20px * var(--s)) calc(-6px * var(--s)) color-mix(in srgb, var(--act) 50%, transparent);
+  animation: island-pulse 1.15s ease-in-out infinite;
+}
+@keyframes island-pulse {
+  0%, 100% {
+    background: color-mix(in srgb, var(--act) 5%, color-mix(in srgb, var(--panel) 90%, transparent));
+    box-shadow:
+      var(--sombra-flutuante),
+      0 calc(4px * var(--s)) calc(14px * var(--s)) calc(-6px * var(--s)) color-mix(in srgb, var(--act) 22%, transparent);
+  }
+  50% {
+    background: color-mix(in srgb, var(--act) 15%, color-mix(in srgb, var(--panel) 90%, transparent));
+    box-shadow:
+      var(--sombra-flutuante),
+      0 calc(6px * var(--s)) calc(26px * var(--s)) calc(-5px * var(--s)) color-mix(in srgb, var(--act) 62%, transparent);
+  }
+}
 @keyframes island-in {
   from { opacity: 0; transform: translateX(-50%) translateY(-8px) scale(0.96); }
   to { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
@@ -263,15 +297,15 @@ input[type="checkbox"] { accent-color: var(--marca); }
   border-radius: 999px;
 }
 
-/* atividade ao vivo: ponto estático com brilho + texto, cor pelo tom */
-.island-act { padding: calc(2px * var(--s)) calc(10px * var(--s)); gap: calc(9px * var(--s)); }
-.island-act.tone-flow { --act: #007aff; }
-.island-act.tone-ok { --act: #3fb950; }
-.island-act.tone-bad { --act: #f0616a; }
-.island-act-dot {
-  width: calc(8px * var(--s)); height: calc(8px * var(--s)); border-radius: 50%;
-  background: var(--act); box-shadow: 0 0 calc(10px * var(--s)) var(--act);
-  flex: none;
+/* atividade ao vivo: só o texto. A cor é o pulso da casca (ver .island.tone-*) */
+.island-act { padding: calc(2px * var(--s)) calc(10px * var(--s)); }
+/* saída: espelha o island-swap ao contrário, subindo em vez de descer — a
+   mensagem "sobe e evapora" enquanto a largura volta com mola */
+.island-act.is-out {
+  animation: island-act-out 0.18s cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+@keyframes island-act-out {
+  to { opacity: 0; transform: translateY(-5px) scale(0.94); filter: blur(5px); }
 }
 .island-act-text { font: 500 calc(12px * var(--s)) var(--sans); color: var(--text); }
 
@@ -412,7 +446,11 @@ input[type="checkbox"] { accent-color: var(--marca); }
 }
 @media (prefers-reduced-motion: reduce) {
   .react-flow__edge.animated .react-flow__edge-path { animation: none; }
-  .island, .island-swap { animation: none; }
+  /* pulso morre; o realce estático de .island.is-activity fica. E a saída sem
+     animação PRECISA do opacity, senão a mensagem congela visível pelos
+     SAIDA_MS em vez de sair */
+  .island, .island-swap, .island.is-activity { animation: none; }
+  .island-act.is-out { animation: none; opacity: 0; }
 }
 
 .react-flow__handle {

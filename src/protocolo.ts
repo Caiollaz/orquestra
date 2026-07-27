@@ -32,11 +32,15 @@ export const ROTA_ASCII = new RegExp(`^[${PREFIXO}]*(?:->|=>)\\s*([^\\s:]+)\\s*:
 
 // O parser é lógica pura e não conhece o canvas: quem sabe quais endereços
 // existem é o App, que injeta `conhecido`. Sem ele, só seta unicode passa.
-export function rotaDaLinha(line: string, conhecido: (dest: string) => boolean = () => false) {
-  const m = line.match(ROTA);
-  if (m) return m;
-  const a = line.match(ROTA_ASCII);
-  return a && conhecido(a[1]) ? a : null;
+//
+// A `msg` sai SEM moldura: a ROTA tira o prefixo do TUI da esquerda, mas a ponta
+// direita (borda de caixa, barra de rolagem) ficava colada no fim do texto.
+export function rotaDaLinha(
+  line: string,
+  conhecido: (dest: string) => boolean = () => false,
+): { dest: string; msg: string } | null {
+  const m = line.match(ROTA) ?? ((a) => (a && conhecido(a[1]) ? a : null))(line.match(ROTA_ASCII));
+  return m ? { dest: m[1], msg: semMoldura(m[2]).trimEnd() } : null;
 }
 
 export const rotaKey = (dest: string, msg: string) => `${dest.toLowerCase()} :: ${msg.trim()}`;
@@ -54,8 +58,29 @@ export const rotaKey = (dest: string, msg: string) => `${dest.toLowerCase()} :: 
 //
 // ASCII `|` fica FORA daqui de propósito, embora esteja no prefixo da ROTA:
 // linha de tabela markdown começa com `|` e um agente escrevendo tabela numa
-// nota é caso comum — stripar ali corromperia a tabela.
-const MOLDURA = /^(?:[⎿│┃╎┆▌▏]+ ?)+/u;
+// nota é caso comum — stripar ali corromperia a tabela. Vale pras duas pontas:
+// linha de tabela TERMINA com `|` também.
+const MOLDURA_ESQ = /^(?:[⎿│┃╎┆▌▏]+ ?)+/u;
+
+// A ponta DIREITA existe por causa da barra de rolagem: o opencode desenha `█`
+// (e meios-blocos) na coluna da direita, em TODA linha da área de mensagens. Uma
+// linha em branco vinha como "            █" — que não é vazia pro `.trim()`, e
+// o bloco não parava nela: engolia a tela inteira até a barra de status. Sintoma
+// exato: pedir uma nota e receber o texto + o nome do modelo + "barras pretas".
+const MOLDURA_DIR = /\s*[│┃╎┆█▉▊▋▌▍▎▏░▒▓]+\s*$/u;
+
+// Linha que é só régua/borda de caixa fecha o bloco. O TUI desenha a base da
+// caixa antes da barra de status; sem isto ela e tudo abaixo entravam na nota.
+// Só box-drawing: `---` de markdown é ASCII e continua sendo conteúdo.
+const REGUA = /^[\s─━═╌╍┄┅┈┉╭╮╰╯┌┐└┘├┤┬┴┼╔╗╚╝║╠╣╦╩╬]+$/u;
+
+export const semMoldura = (s: string) => s.replace(MOLDURA_ESQ, "").replace(MOLDURA_DIR, "");
+
+// Fim do bloco: linha que sobra vazia depois de tirar a moldura, ou régua.
+const fechaBloco = (linha: string) => {
+  const limpa = semMoldura(linha);
+  return !limpa.trim() || REGUA.test(limpa);
+};
 
 // `conhecido` vai junto porque o bloco tem de enxergar rota com a MESMA régua do
 // laço: se o laço aceita `->nota:` e o bloco não, ele não acha a mensagem da
@@ -69,8 +94,8 @@ export function blocoDaRota(
   if (!m) return { msg: "", fim: i };
   const corpo: string[] = [];
   let j = i;
-  while (j + 1 < lines.length && lines[j + 1].trim() && !rotaDaLinha(lines[j + 1], conhecido)) {
-    corpo.push(lines[++j].replace(MOLDURA, ""));
+  while (j + 1 < lines.length && !fechaBloco(lines[j + 1]) && !rotaDaLinha(lines[j + 1], conhecido)) {
+    corpo.push(semMoldura(lines[++j]).trimEnd());
   }
-  return { msg: corpo.length ? [m[2], ...corpo].join("\n") : m[2], fim: j };
+  return { msg: corpo.length ? [m.msg, ...corpo].join("\n") : m.msg, fim: j };
 }

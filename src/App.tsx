@@ -319,12 +319,18 @@ export default function App() {
   }, []);
 
   const flashTimers = useRef(new Map<string, number>());
-  const flashEdge = useCallback((source: string, target: string) => {
+  // `aviso: false` acende a aresta sem notificar. Serve os caminhos de RESPOSTA
+  // (shell/portal devolvendo pra quem pediu): lá a aresta que pisca é a do
+  // pedido, então o texto automático sairia com a direção invertida — e o
+  // chamador já notifica a coisa certa logo em seguida.
+  const flashEdge = useCallback((source: string, target: string, aviso = true) => {
     const match = (e: Edge) => e.source === source && e.target === target;
     setEdges((es) => es.map((e) => (match(e) ? { ...e, animated: true } : e)));
-    // atividade na island: quem falou com quem
+    // atividade na island: quem falou com quem, em prosa. Sem seta — a
+    // notificação é pra acompanhar o que os agentes estão fazendo, e `⇢` ali é
+    // sintaxe do protocolo vazando pra dentro da UI.
     const lbl = (id: string) => (nodesRef.current.find((n) => n.id === id)?.data as { label?: string } | undefined)?.label ?? id;
-    islandNotify({ text: `${lbl(source)} ⇢ ${lbl(target)}`, tone: "flow" });
+    if (aviso) islandNotify({ text: `${lbl(source)} mandou pra ${lbl(target)}`, tone: "flow" });
     const key = `${source}->${target}`;
     const prev = flashTimers.current.get(key);
     if (prev) clearTimeout(prev);
@@ -491,7 +497,7 @@ export default function App() {
         // erro NUNCA é silêncio: o agente pediu e está esperando
         texto = `(de ${nome}) falha ao ler ${url || "(sem url)"}: ${e instanceof Error ? e.message : String(e)}`;
       }
-      islandNotify({ text: `${nome} \u21e2 ${rotulo(pedinteId)}`, tone: "ok" });
+      islandNotify({ text: `${nome} respondeu ${rotulo(pedinteId)}`, tone: "ok" });
       rememberSent(pedinteId, texto);
       await forwardOutput(pedinteId, texto).catch(() => {
         islandNotify({ text: `${nome}: resposta não entregue`, tone: "bad" });
@@ -519,8 +525,8 @@ export default function App() {
       const corte = trunca(saida || "(sem saída)", MAX_SAIDA_SHELL, "fim");
       const texto = `(de ${d.label}) \`${espera.comando}\`\n${corte.texto}`
         + (corte.cortado ? `\n\n(…só o final: ${kb(MAX_SAIDA_SHELL)} de ${kb(corte.bytes)})` : "");
-      flashEdge(espera.pedinte, id);
-      islandNotify({ text: `${d.label} ⇢ ${(nodesRef.current.find((n) => n.id === espera.pedinte)?.data as { label?: string } | undefined)?.label ?? espera.pedinte}`, tone: "ok" });
+      flashEdge(espera.pedinte, id, false); // a aresta é a do pedido; o aviso certo vem abaixo
+      islandNotify({ text: `${d.label} respondeu ${(nodesRef.current.find((n) => n.id === espera.pedinte)?.data as { label?: string } | undefined)?.label ?? espera.pedinte}`, tone: "ok" });
       rememberSent(espera.pedinte, texto);
       void forwardOutput(espera.pedinte, texto).catch(() => {});
       return;
@@ -587,8 +593,8 @@ export default function App() {
     for (let i = 0; i < lines.length; i++) {
       const m = rotaDaLinha(lines[i], enderecoExiste);
       if (!m) continue;
-      const [, dest] = m;
-      let msg = m[2];
+      const { dest } = m;
+      let msg = m.msg;
       // já despachada numa varredura anterior desta mesma linha física
       // (a tela é re-lida todo idle — ver readRouteLines)
       const chave = `${rows[i].idx}::${lines[i]}`;
@@ -616,7 +622,7 @@ export default function App() {
         // havia nota conectada NAQUELA direção (a aresta é dirigida: precisa ser
         // agente → nota).
         if (!notas.length) {
-          islandNotify({ text: `${d.label}: ⇢nota sem nota conectada (a aresta vai do agente PRA nota)`, tone: "bad" });
+          islandNotify({ text: `${d.label}: sem nota conectada (agente → nota)`, tone: "bad" });
           continue;
         }
         notas.forEach((t) => {
@@ -640,7 +646,7 @@ export default function App() {
       // exatamente isso que fez "o claude disse que delegou e nada chegou" virar
       // um mistério. Agora a island diz.
       if (!wanted.length) {
-        islandNotify({ text: `${d.label}: ⇢${dest} não existe aqui`, tone: "bad" });
+        islandNotify({ text: `${d.label}: ${dest} não existe aqui`, tone: "bad" });
         continue;
       }
       if (wanted.some((t) => nodesRef.current.find((n) => n.id === t)?.type === "mermaid")) {

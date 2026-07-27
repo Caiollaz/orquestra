@@ -28,16 +28,45 @@ assert.equal(rotaKey("API", " oi "), "api :: oi");
 // Caso real que motivou isto: o claude respondeu `->nota: oi` e a rota morreu.
 const canvas = (d: string) => ["nota", "todos", "api", "shell-1"].includes(d.toLowerCase());
 
-assert.deepEqual(rotaDaLinha("->nota: oi", canvas)?.slice(1), ["nota", "oi"]);
-assert.deepEqual(rotaDaLinha("⏺ -> api: sobe", canvas)?.slice(1), ["api", "sobe"]);
-assert.deepEqual(rotaDaLinha("=> shell-1: ls", canvas)?.slice(1), ["shell-1", "ls"]);
+assert.deepEqual(rotaDaLinha("->nota: oi", canvas), { dest: "nota", msg: "oi" });
+assert.deepEqual(rotaDaLinha("⏺ -> api: sobe", canvas), { dest: "api", msg: "sobe" });
+assert.deepEqual(rotaDaLinha("=> shell-1: ls", canvas), { dest: "shell-1", msg: "ls" });
 // o falso positivo que fez o ASCII ficar de fora: destino não é nó, não é rota
 assert.equal(rotaDaLinha("--> src/main.rs:10:5", canvas), null);
 assert.equal(rotaDaLinha("-> resultado: deu certo", canvas), null);
 // sem saber o canvas, ASCII continua não valendo (o parser puro é conservador)
 assert.equal(rotaDaLinha("->nota: oi"), null);
 // unicode não depende de nada disso
-assert.deepEqual(rotaDaLinha("⇢desconhecido: x")?.slice(1), ["desconhecido", "x"]);
+assert.deepEqual(rotaDaLinha("⇢desconhecido: x"), { dest: "desconhecido", msg: "x" });
+
+// ── moldura na ponta DIREITA (barra de rolagem do opencode) ────────────────
+// Caso real: nota recebia o texto + o nome do modelo + "barras pretas". A área
+// de mensagens do opencode leva `█` na coluna da direita em TODA linha, então
+// linha em branco não era vazia pro .trim() e o bloco engolia a tela até a
+// barra de status.
+assert.deepEqual(rotaDaLinha("│ ⇢nota: oi                    █"), { dest: "nota", msg: "oi" });
+assert.deepEqual(rotaDaLinha("│ ⇢nota: oi │"), { dest: "nota", msg: "oi" });
+
+const opencode = [
+  "│ ⇢nota: primeira                                   █",
+  "│ segunda                                           █",
+  "│                                                   █",   // "vazia" com a barra
+  "│ ─── isto é a barra de status ───                  █",
+  "│ anthropic/claude-sonnet-4                         █",
+];
+assert.deepEqual(blocoDaRota(opencode, 0), { msg: "primeira\nsegunda", fim: 1 });
+
+// régua/base de caixa também fecha o bloco
+assert.deepEqual(
+  blocoDaRota(["⇢nota: texto", "mais texto", "╰──────────────╯", "barra de status"], 0),
+  { msg: "texto\nmais texto", fim: 1 },
+);
+
+// tabela markdown sobrevive: ASCII `|` não é moldura em NENHUMA das duas pontas
+assert.deepEqual(
+  blocoDaRota(["⇢nota: Status", "| # | Tarefa |", "|---|--------|"], 0),
+  { msg: "Status\n| # | Tarefa |\n|---|--------|", fim: 2 },
+);
 
 // bloco multilinha tem de enxergar rota com a MESMA régua: primeira linha ASCII
 // devolvia msg vazia, e uma rota ASCII seguinte era engolida como corpo
