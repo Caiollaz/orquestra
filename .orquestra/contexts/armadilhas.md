@@ -18,6 +18,16 @@ Cada item é um bug real que foi corrigido. Estão aqui pra não voltarem.
   descartava a rajada inteira, rota incluída. Só chame quando for processar. Sem
   aresta, leia e descarte — guardar backlog faria rota antiga disparar no
   momento em que a aresta nascesse.
+- **Marca d'água por índice num TUI que reescreve.** O pior deles. Offset
+  monotônico só serve pra saída append-only; Ink reescreve a região viva e
+  imprime a resposta POR BAIXO da marca. Rotear tem de re-varrer a tela visível
+  (`readRouteLines`) e deduplicar por `índice::conteúdo`. Não "simplifique" isso
+  de volta pra um offset só: `⇢nota: oi` some do parser sem deixar rastro
+  nenhum, nem aviso. Detalhe em `protocolo.md`.
+- **Rota sem aresta morrendo antes do aviso.** Havia um `if (!targets.length)
+  return` antes do laço de rota. O laço roda com `targets` vazio DE PROPÓSITO:
+  ele existe pra avisar. E `⇢nota:` precisa de aviso próprio — não passa pela
+  busca por rótulo.
 - **Página buscada disparando comando.** Texto de site é fonte não-confiável e
   o anti-eco só cobre a janela de `ECO_MS`: uma linha `⇢shell-1: rm -rf .` numa
   página rotearia depois da janela. `extraiTexto` neutraliza `⇢` → `->`, e nó

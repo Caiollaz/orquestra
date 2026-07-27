@@ -15,13 +15,29 @@ A regex `ROTA` (em `src/protocolo.ts`, usada pelos dois lados) tolera os bullets
 do TUI e **um conjunto de setas**, não só o `⇢`: modelo que não é claude
 normaliza glifo raro na saída — caso real, DeepSeek escreveu `→opencode-1:` e a
 rota morreu calada, com o agente convencido de que havia delegado. Aceitas:
-`⇢ → ⇒ ⟹ ⟶ ➔ ➞ ➜ ➡ ⇨ ↦`. ASCII `->` e `=>` ficam **fora** de propósito: saída de
-rustc é cheia de `--> src/main.rs:10:5`, que casaria com `dest=src/main.rs`.
-Pedimos `⇢` no prompt e toleramos na entrada. O parser é lógica pura e tem
-checagem rodável: `node src/protocolo.check.ts`.
+`⇢ → ⇒ ⟹ ⟶ ➔ ➞ ➜ ➡ ⇨ ↦`. Pedimos `⇢` no prompt e toleramos na entrada. O parser
+é lógica pura e tem checagem rodável: `node src/protocolo.check.ts`.
+
+ASCII `->` e `=>` valem **condicionalmente**: só quando o destino é um endereço
+que existe (rótulo de nó no canvas, `nota` ou `todos`). Ignorar ASCII de vez
+custou caro — o claude respondeu `->nota: oi` e a rota morreu calada — mas
+aceitar de vez casaria com `--> src/main.rs:10:5` da saída do rustc. A condição
+mata esse falso positivo por construção: `src/main.rs` não é rótulo de nó.
+Quem decide é `rotaDaLinha(linha, conhecido)`; o `conhecido` vem do App
+(`enderecoExiste`), porque o parser não conhece o canvas. `blocoDaRota` recebe o
+mesmo `conhecido` — régua diferente entre os dois faz o bloco engolir a rota
+seguinte como corpo.
 
 **Rota sem destino avisa.** Linha bem formada apontando pra nome que ninguém
 atende gera aviso na island (`claude-1: ⇢nome não existe aqui`) em vez de sumir.
+Isso vale inclusive quando o agente **não tem aresta nenhuma** — o laço de rota
+roda com `targets` vazio só pra avisar; ter um `return` antecipado ali era o
+buraco mais silencioso do app. `⇢nota:` sem nota conectada tem aviso próprio
+(`⇢nota sem nota conectada`), porque não passa pela busca por rótulo.
+
+Palavra sobrecarregada: `anotar`/`registrar` puxava o agente pro `board.md`
+(arquivo) em vez da nota (nó do canvas) — "pedi pra anotar um oi, ele disse que
+anotou e nada apareceu". O `seedPrompt` separa os dois explicitamente.
 
 ## Semântica por tipo de destino
 O tipo do nó decide o que a linha significa — e o aviso `(sistema)` mandado na
@@ -107,6 +123,27 @@ mermaid. ASCII `|` fica de fora — linha de tabela markdown começa com `|`.
 
 Teto conhecido: um bloco partido entre duas leituras do buffer do xterm chega
 pela metade.
+
+## Ler o terminal: watermark não basta, a tela é re-varrida
+O bug mais caro da série. `lastLineRef` é uma marca d'água por **índice de
+linha** do buffer do xterm, e isso só é válido pra saída append-only. O TUI do
+agente não é: Ink mantém uma região viva embaixo (caixa de input, spinner,
+status) e a **reescreve** a cada frame. O idle de 1s dispara com o cursor dentro
+dessa região, a marca avança por cima daquelas linhas, e a resposta seguinte é
+impressa **em cima delas** — abaixo da marca, nunca lida. Sintoma: `⇢nota: oi`
+visível no terminal, nota vazia, e nem o aviso de destino inexistente, porque a
+linha jamais chegou ao parser.
+
+`readRouteLines` re-varre a **tela visível inteira** a cada idle, além do que
+passou da marca. Quem impede rotear duas vezes é a dedupe por
+`índice absoluto::conteúdo` (`rowsRoteadasRef`) — exata, sem janela de tempo:
+linha reescrita tem conteúdo novo, rota repetida de verdade cai noutro índice.
+Só rota entra no conjunto, então ele não cresce.
+
+`readNewLines` (marca d'água, avança) continua existindo e é o que a **entrega
+de saída de shell** usa: aquele caminho é append-only e reentregar duplicaria.
+Remontagem do nó limpa `rowsRoteadasRef` junto com a marca — buffer novo,
+índices antigos não valem.
 
 `isLLM(cmd)` (`App.tsx`) é o **único** lugar que separa "recebe prosa"
 (`claude` + `agent`: protocolo, papéis, contextos, avisos) de "recebe comando

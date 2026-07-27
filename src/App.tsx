@@ -46,7 +46,7 @@ import {
   type AgentCmd, type Role, type Floor, type WorkspaceMeta, type WsAgent, type Workspace, type CanvasState, type Context,
 } from "./lib/tauri";
 import { terminals, noteText, folderName } from "./shared";
-import { ROTA, rotaKey, blocoDaRota } from "./protocolo";
+import { ROTA, rotaKey, blocoDaRota, rotaDaLinha } from "./protocolo";
 import { enquadraNota, enquadraNotas, modoValido, MODO_PADRAO, type ModoNota } from "./nota";
 import { comandoPortal, normalizaUrl, extraiTexto } from "./pagina";
 import { trunca, kb } from "./texto";
@@ -54,6 +54,10 @@ import { aplicaTema, temaSalvo, type Tema } from "./tema";
 import "./App.css";
 
 const nodeTypes: NodeTypes = { agent: AgentNode, note: NoteNode, mermaid: MermaidNode, portal: PortalNode };
+
+// Linha lida do buffer do xterm, com o índice absoluto junto: o índice é a
+// identidade da linha entre duas leituras (ver readRouteLines).
+type Linha = { idx: number; text: string };
 let seq = 0;
 
 // por quanto tempo uma rota que NÓS enviamos é tratada como eco (redraw do TUI)
@@ -120,6 +124,11 @@ export default function App() {
   const nodesRef = useRef<Node[]>([]);
   nodesRef.current = nodes;
   const lastLineRef = useRef(new Map<string, number>());
+  // Rotas já despachadas, por agente, na chave "índice absoluto::conteúdo".
+  // Existe porque o roteamento re-varre a tela visível a cada idle — ver
+  // `readRouteLines`. Só rota entra aqui, então o conjunto fica pequeno.
+  // ponytail: sem poda; se um dia crescer, apagar chave com índice < baseY.
+  const rowsRoteadasRef = useRef(new Map<string, Set<string>>());
   const seededRef = useRef(new Set<string>());
   // Eco anti-cascata (regra 5): tudo que MANDAMOS pra um agente reaparece no
   // terminal dele (o TUI ecoa o paste). Um bloco de contexto que documenta o
@@ -299,6 +308,16 @@ export default function App() {
     // no array (avaliado na hora) cai no TDZ. O corpo só roda depois.
   }, [dirty, rememberSent, descreveDestino]);
 
+  // Endereço que existe no canvas: destino reservado ou rótulo de algum nó.
+  // É o que autoriza uma seta ASCII a virar rota (ver protocolo.ts). Olha TODOS
+  // os nós, não só os conectados, de propósito: aresta desenhada ao contrário
+  // ainda cai no aviso "⇢X não existe aqui" em vez de sumir.
+  const enderecoExiste = useCallback((dest: string) => {
+    const d = dest.toLowerCase();
+    if (d === "nota" || d === "todos") return true;
+    return nodesRef.current.some((n) => (n.data as { label?: string }).label?.toLowerCase() === d);
+  }, []);
+
   const flashTimers = useRef(new Map<string, number>());
   const flashEdge = useCallback((source: string, target: string) => {
     const match = (e: Edge) => e.source === source && e.target === target;
@@ -324,6 +343,7 @@ export default function App() {
     ctxSeededRef.current.delete(id);
     noteSeededRef.current.delete(id);
     sentRef.current.delete(id);
+    rowsRoteadasRef.current.delete(id);
     esperaShell.current.delete(id);
     const t = schedRef.current.get(id);
     if (t) { clearInterval(t); schedRef.current.delete(id); }
@@ -342,26 +362,58 @@ export default function App() {
     noteSeededRef.current.delete(id);
     sentRef.current.delete(id);
     lastLineRef.current.delete(id);
+    rowsRoteadasRef.current.delete(id); // buffer novo: os índices antigos não valem mais
     esperaShell.current.delete(id); // processo novo: a saída antiga não vem mais
     setNodes((ns) => ns.map((n) => (n.id === id && (n.data as AgentNodeData).exited ? { ...n, data: { ...n.data, exited: false } } : n)));
   }, []);
 
-  const readNewLines = useCallback((id: string): string[] => {
-    const term = terminals.get(id);
-    if (!term) return [];
-    const buf = term.buffer.active;
-    const end = buf.baseY + buf.cursorY;
-    const start = lastLineRef.current.get(id) ?? 0;
-    const lines: string[] = [];
-    for (let i = start; i <= end; i++) {
+  // Junta [de..ate] do buffer colando as continuações de wrap na linha anterior.
+  // `idx` é o índice absoluto da PRIMEIRA linha física do trecho: é ele que
+  // identifica a linha entre duas leituras, porque o TUI reescreve por índice.
+  const lerFaixa = useCallback((id: string, de: number, ate: number): Linha[] => {
+    const buf = terminals.get(id)?.buffer.active;
+    if (!buf) return [];
+    const out: Linha[] = [];
+    for (let i = Math.max(0, de); i <= ate; i++) {
       const line = buf.getLine(i);
       if (!line) continue;
-      if (line.isWrapped && lines.length) lines[lines.length - 1] += line.translateToString(true);
-      else lines.push(line.translateToString(true));
+      if (line.isWrapped && out.length) out[out.length - 1].text += line.translateToString(true);
+      else out.push({ idx: i, text: line.translateToString(true) });
     }
-    lastLineRef.current.set(id, end + 1);
-    return lines;
+    return out;
   }, []);
+
+  // Do watermark até o cursor, AVANÇANDO o watermark. Entrega append-only
+  // (saída de shell delegado) depende disso pra não reentregar o que já foi.
+  const readNewLines = useCallback((id: string): Linha[] => {
+    const buf = terminals.get(id)?.buffer.active;
+    if (!buf) return [];
+    const end = buf.baseY + buf.cursorY;
+    const linhas = lerFaixa(id, lastLineRef.current.get(id) ?? 0, end);
+    lastLineRef.current.set(id, end + 1);
+    return linhas;
+  }, [lerFaixa]);
+
+  // Leitura para ROTEAMENTO. O watermark sozinho perde rota, e esse foi o bug
+  // mais caro da série: o TUI do agente mantém uma região viva embaixo (caixa de
+  // input, spinner, status) e a REESCREVE a cada frame. O idle de 1s dispara com
+  // o cursor dentro dessa região, o watermark passa por cima daquelas linhas, e
+  // a resposta seguinte é impressa EM CIMA delas — abaixo do watermark, nunca
+  // lida. Caso real: `⇢nota: oi` visível no terminal, nota vazia, e nem o aviso
+  // de destino inexistente saía, porque a linha jamais chegou ao parser.
+  //
+  // Então re-varremos a tela visível inteira todo idle. Quem evita rotear duas
+  // vezes é a dedupe por "índice::conteúdo" (`rowsRoteadasRef`), que é exata e
+  // não precisa de janela de tempo: linha reescrita tem conteúdo novo, e rota
+  // que o agente repete de verdade cai noutro índice.
+  const readRouteLines = useCallback((id: string): Linha[] => {
+    const buf = terminals.get(id)?.buffer.active;
+    if (!buf) return [];
+    const novas = readNewLines(id); // mantém o watermark em dia pro caminho do shell
+    const vistas = new Set(novas.map((l) => l.idx));
+    const tela = lerFaixa(id, buf.baseY, buf.baseY + buf.cursorY).filter((l) => !vistas.has(l.idx));
+    return [...tela, ...novas].sort((a, b) => a.idx - b.idx);
+  }, [readNewLines, lerFaixa]);
 
   // Vizinhos ATUAIS do agente, pra entrar no prompt de protocolo. Sem isso, um
   // workspace recarregado tem agentes que sabem falar ⇢NOME: e não sabem nenhum
@@ -377,7 +429,7 @@ export default function App() {
   };
 
   const seedPrompt = (label: string, vizinhos: string) =>
-    `Você é o nó "${label}" num canvas do orquestra, junto com outros agentes. Mensagens de outros chegam como "(de nome) texto". Para falar com um nó conectado a você, escreva uma linha própria no formato ⇢NOME: texto — NOME é o título do nó de destino, ou a palavra todos para todos os conectados. Se o nó conectado for um terminal shell, ⇢NOME: comando digita e executa o comando NAQUELE terminal — quando o usuário pedir para rodar algo "no terminal", delegue assim, não execute você mesmo. Se o nó conectado for outro agente e o usuário pedir que ELE faça algo ("faça o codex implementar tal coisa"), delegue com ⇢NOME: em vez de fazer você mesmo: descreva a tarefa inteira na mensagem, porque ele não vê esta conversa. ATENÇÃO: delegar é ESCREVER a linha ⇢NOME: texto na sua saída, sozinha na linha, começando com o caractere ⇢ (copie ele daqui). Dizer "deleguei", anotar num arquivo ou descrever a tarefa em prosa NÃO entrega nada — só a linha entrega. A resposta dele volta pra você como "(de NOME) texto" — espere por ela antes de concluir, e use o mesmo caminho para tirar dúvidas com ele. Para registrar algo numa nota conectada, escreva ⇢nota: texto. ${vizinhos} Você será avisado com "(sistema) ..." quando novas conexões forem criadas. Alinhamento: mantenha o quadro .orquestra/board.md na raiz do projeto — registre nele suas ações, decisões e status, e consulte-o antes de cada tarefa nova. Responda apenas OK.`;
+    `Você é o nó "${label}" num canvas do orquestra, junto com outros agentes. Mensagens de outros chegam como "(de nome) texto". Para falar com um nó conectado a você, escreva uma linha própria no formato ⇢NOME: texto — NOME é o título do nó de destino, ou a palavra todos para todos os conectados. Se o nó conectado for um terminal shell, ⇢NOME: comando digita e executa o comando NAQUELE terminal — quando o usuário pedir para rodar algo "no terminal", delegue assim, não execute você mesmo. Se o nó conectado for outro agente e o usuário pedir que ELE faça algo ("faça o codex implementar tal coisa"), delegue com ⇢NOME: em vez de fazer você mesmo: descreva a tarefa inteira na mensagem, porque ele não vê esta conversa. ATENÇÃO: delegar é ESCREVER a linha ⇢NOME: texto na sua saída, sozinha na linha, começando com o caractere ⇢ (copie ele daqui). Dizer "deleguei", anotar num arquivo ou descrever a tarefa em prosa NÃO entrega nada — só a linha entrega. A resposta dele volta pra você como "(de NOME) texto" — espere por ela antes de concluir, e use o mesmo caminho para tirar dúvidas com ele. Para escrever numa nota conectada (o "bloco de contexto" do canvas), escreva ⇢nota: texto — e quando o usuário pedir para "anotar", "registrar" ou "escrever" algo na nota, é ESSA linha que entrega: a nota é um nó do canvas, não um arquivo, e ela só muda se a linha ⇢nota: aparecer na sua saída. ${vizinhos} Você será avisado com "(sistema) ..." quando novas conexões forem criadas. Alinhamento: mantenha o quadro .orquestra/board.md na raiz do projeto — esse é um ARQUIVO, coisa diferente da nota: registre nele suas ações, decisões e status, e consulte-o antes de cada tarefa nova. Responda apenas OK.`;
 
   // semeia num agente os contextos escolhidos (uma submissão só, via Rust) e
   // registra no nó o que foi semeado — persiste e vira selo no header.
@@ -463,7 +515,7 @@ export default function App() {
     if (espera) {
       const lines = readNewLines(id);
       esperaShell.current.delete(id);
-      const saida = lines.join("\n").trim();
+      const saida = lines.map((l) => l.text).join("\n").trim();
       const corte = trunca(saida || "(sem saída)", MAX_SAIDA_SHELL, "fim");
       const texto = `(de ${d.label}) \`${espera.comando}\`\n${corte.texto}`
         + (corte.cortado ? `\n\n(…só o final: ${kb(MAX_SAIDA_SHELL)} de ${kb(corte.bytes)})` : "");
@@ -522,15 +574,26 @@ export default function App() {
       }
     }
     const targets = edgesRef.current.filter((e) => e.source === id).map((e) => e.target);
-    // sem aresta não há o que rotear, mas o offset TEM de avançar: guardar o
-    // backlog faria a rota antiga disparar no momento em que a aresta nascesse
-    if (!targets.length) { readNewLines(id); return; }
-    const lines = readNewLines(id);
+    // Sem aresta o laço roda igual, só não entrega nada: ele existe pra AVISAR.
+    // Antes havia um `if (!targets.length) return` aqui e era o buraco mais
+    // silencioso do app — agente sem conexão (ou com a aresta desenhada ao
+    // contrário) escrevia a rota, cumpria o protocolo e não recebia nem o
+    // "⇢X não existe aqui". O offset avança no readNewLines abaixo, como antes:
+    // guardar o backlog faria a rota antiga disparar quando a aresta nascesse.
+    const rows = readRouteLines(id);
+    const lines = rows.map((r) => r.text);
+    let feitas = rowsRoteadasRef.current.get(id);
+    if (!feitas) rowsRoteadasRef.current.set(id, (feitas = new Set()));
     for (let i = 0; i < lines.length; i++) {
-      const m = lines[i].match(ROTA);
+      const m = rotaDaLinha(lines[i], enderecoExiste);
       if (!m) continue;
       const [, dest] = m;
       let msg = m[2];
+      // já despachada numa varredura anterior desta mesma linha física
+      // (a tela é re-lida todo idle — ver readRouteLines)
+      const chave = `${rows[i].idx}::${lines[i]}`;
+      if (feitas.has(chave)) continue;
+      feitas.add(chave);
       // eco do que nós mesmos semeamos/encaminhamos: dentro da janela, não roteia
       const eco = sentRef.current.get(id);
       const ate = eco?.get(rotaKey(dest, msg));
@@ -542,13 +605,26 @@ export default function App() {
         // nota também aceita bloco multilinha: agente escrevendo relatório numa
         // nota mandava só a primeira linha e o resto virava texto solto no
         // terminal. Mesmo corte do diagrama — para em linha vazia ou próxima rota.
-        const bloco = blocoDaRota(lines, i);
+        const bloco = blocoDaRota(lines, i, enderecoExiste);
         msg = bloco.msg;
         i = bloco.fim;
-        targets.forEach((t) => {
-          if (nodesRef.current.find((n) => n.id === t)?.type !== "note") return;
+        const notas = targets.filter((t) => nodesRef.current.find((n) => n.id === t)?.type === "note");
+        // `nota` era o único destino que sumia calado: o resto do laço cai no
+        // "⇢X não existe aqui", mas aqui o forEach simplesmente não achava nota
+        // e seguia. Caso real: "pedi pro claude anotar um oi, ele disse que
+        // anotou e nada apareceu" — o agente tinha escrito a linha certa, só não
+        // havia nota conectada NAQUELA direção (a aresta é dirigida: precisa ser
+        // agente → nota).
+        if (!notas.length) {
+          islandNotify({ text: `${d.label}: ⇢nota sem nota conectada (a aresta vai do agente PRA nota)`, tone: "bad" });
+          continue;
+        }
+        notas.forEach((t) => {
           flashEdge(id, t);
-          window.dispatchEvent(new CustomEvent("note-write", { detail: { id: t, text: `(${d.label}) ${msg}` } }));
+          // texto puro, sem "(claude-1)": a nota é conteúdo que o usuário lê e
+          // reaproveita, não log de quem falou — quem quiser assinar, assina no
+          // próprio texto. Quem falou já aparece na island e no flash da aresta.
+          window.dispatchEvent(new CustomEvent("note-write", { detail: { id: t, text: msg } }));
         });
         continue;
       }
@@ -568,7 +644,7 @@ export default function App() {
         continue;
       }
       if (wanted.some((t) => nodesRef.current.find((n) => n.id === t)?.type === "mermaid")) {
-        const bloco = blocoDaRota(lines, i);
+        const bloco = blocoDaRota(lines, i, enderecoExiste);
         msg = bloco.msg;
         i = bloco.fim;
       }
@@ -604,7 +680,7 @@ export default function App() {
         void forwardOutput(t, isShell ? msg : `(de ${d.label}) ${msg}`).catch(() => {});
       });
     }
-  }, [readNewLines, flashEdge, rememberSent, seedContextFiles, lerPortal]);
+  }, [readNewLines, readRouteLines, flashEdge, rememberSent, seedContextFiles, lerPortal, enderecoExiste]);
 
   const sendFrom = useCallback((sourceId: string) => {
     const targets = edgesRef.current.filter((e) => e.source === sourceId).map((e) => e.target);

@@ -2,7 +2,7 @@
 // `tsc`), então isto roda direto no node:
 //   node --experimental-strip-types src/protocolo.check.ts
 import assert from "node:assert/strict";
-import { ROTA, rotaKey, blocoDaRota } from "./protocolo.ts";
+import { ROTA, rotaKey, blocoDaRota, rotaDaLinha } from "./protocolo.ts";
 
 // rota simples, com e sem bullet do TUI
 assert.deepEqual("⇢api: sobe o servidor".match(ROTA)?.slice(1), ["api", "sobe o servidor"]);
@@ -23,6 +23,28 @@ assert.equal("-> api: oi".match(ROTA), null);
 assert.equal("--> src/main.rs:10:5".match(ROTA), null);
 assert.equal("=> api: oi".match(ROTA), null);
 assert.equal(rotaKey("API", " oi "), "api :: oi");
+
+// ── seta ASCII: só vale com destino que existe ─────────────────────────────
+// Caso real que motivou isto: o claude respondeu `->nota: oi` e a rota morreu.
+const canvas = (d: string) => ["nota", "todos", "api", "shell-1"].includes(d.toLowerCase());
+
+assert.deepEqual(rotaDaLinha("->nota: oi", canvas)?.slice(1), ["nota", "oi"]);
+assert.deepEqual(rotaDaLinha("⏺ -> api: sobe", canvas)?.slice(1), ["api", "sobe"]);
+assert.deepEqual(rotaDaLinha("=> shell-1: ls", canvas)?.slice(1), ["shell-1", "ls"]);
+// o falso positivo que fez o ASCII ficar de fora: destino não é nó, não é rota
+assert.equal(rotaDaLinha("--> src/main.rs:10:5", canvas), null);
+assert.equal(rotaDaLinha("-> resultado: deu certo", canvas), null);
+// sem saber o canvas, ASCII continua não valendo (o parser puro é conservador)
+assert.equal(rotaDaLinha("->nota: oi"), null);
+// unicode não depende de nada disso
+assert.deepEqual(rotaDaLinha("⇢desconhecido: x")?.slice(1), ["desconhecido", "x"]);
+
+// bloco multilinha tem de enxergar rota com a MESMA régua: primeira linha ASCII
+// devolvia msg vazia, e uma rota ASCII seguinte era engolida como corpo
+assert.deepEqual(
+  blocoDaRota(["->nota: linha 1", "linha 2", "->api: outra"], 0, canvas),
+  { msg: "linha 1\nlinha 2", fim: 1 },
+);
 
 // diagrama: o bloco vai até a linha em branco
 const l1 = ["⇢diagrama-1: flowchart LR", "  A --> B", "  B --> C", "", "sobrou"];

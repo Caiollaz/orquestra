@@ -20,6 +20,25 @@ const PREFIXO = "\\s⏺●•>*\\-⎿│┃╎┆▌▏|";
 // linha de rota: "⇢destino: mensagem"
 export const ROTA = new RegExp(`^[${PREFIXO}]*[${SETAS}]\\s*([^\\s:]+)\\s*:\\s*(.+)$`, "u");
 
+// Seta ASCII. Fica FORA da ROTA pelo motivo acima, mas ignorá-la de vez custou
+// caro: caso real, o claude respondeu `->nota: oi` e a rota morreu calada. O
+// modelo escreve o que é fácil de digitar, não o glifo que pedimos.
+//
+// A saída é condicionar, não alargar: seta ASCII só vira rota quando o DESTINO
+// é um endereço que existe (rótulo de nó no canvas, `nota` ou `todos`). Isso
+// mata o falso positivo do rustc por construção — `src/main.rs` não é rótulo de
+// nó — sem depender de heurística sobre a forma do texto.
+export const ROTA_ASCII = new RegExp(`^[${PREFIXO}]*(?:->|=>)\\s*([^\\s:]+)\\s*:\\s*(.+)$`, "u");
+
+// O parser é lógica pura e não conhece o canvas: quem sabe quais endereços
+// existem é o App, que injeta `conhecido`. Sem ele, só seta unicode passa.
+export function rotaDaLinha(line: string, conhecido: (dest: string) => boolean = () => false) {
+  const m = line.match(ROTA);
+  if (m) return m;
+  const a = line.match(ROTA_ASCII);
+  return a && conhecido(a[1]) ? a : null;
+}
+
 export const rotaKey = (dest: string, msg: string) => `${dest.toLowerCase()} :: ${msg.trim()}`;
 
 // Destino multilinha (diagrama mermaid): o ⇢ só cabe na primeira linha, então o
@@ -38,12 +57,19 @@ export const rotaKey = (dest: string, msg: string) => `${dest.toLowerCase()} :: 
 // nota é caso comum — stripar ali corromperia a tabela.
 const MOLDURA = /^(?:[⎿│┃╎┆▌▏]+ ?)+/u;
 
-export function blocoDaRota(lines: string[], i: number): { msg: string; fim: number } {
-  const m = lines[i].match(ROTA);
+// `conhecido` vai junto porque o bloco tem de enxergar rota com a MESMA régua do
+// laço: se o laço aceita `->nota:` e o bloco não, ele não acha a mensagem da
+// primeira linha (volta vazio) nem para na rota seguinte (engole ela como corpo).
+export function blocoDaRota(
+  lines: string[],
+  i: number,
+  conhecido: (dest: string) => boolean = () => false,
+): { msg: string; fim: number } {
+  const m = rotaDaLinha(lines[i], conhecido);
   if (!m) return { msg: "", fim: i };
   const corpo: string[] = [];
   let j = i;
-  while (j + 1 < lines.length && lines[j + 1].trim() && !ROTA.test(lines[j + 1])) {
+  while (j + 1 < lines.length && lines[j + 1].trim() && !rotaDaLinha(lines[j + 1], conhecido)) {
     corpo.push(lines[++j].replace(MOLDURA, ""));
   }
   return { msg: corpo.length ? [m[2], ...corpo].join("\n") : m[2], fim: j };
